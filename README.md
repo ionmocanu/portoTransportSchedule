@@ -10,7 +10,7 @@ cd porto-metro
 node server.js
 ```
 
-→ http://localhost:8080 (or http://<pc-ip>:8080 from your phone).
+→ http://localhost:8088 (or http://<pc-ip>:8088 from your phone).
 
 Folder layout must be:
 

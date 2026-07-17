@@ -3,7 +3,7 @@
  * Later this same file grows an /api/departures route backed by the GTFS import.
  *
  *   node server.js
- *   → http://localhost:8080
+ *   → http://localhost:8088
  */
 
 const http = require('node:http');
@@ -12,7 +12,7 @@ const path = require('node:path');
 const gtfs = require('./gtfs');
 const updater = require('./update-gtfs');
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8088;
 const ROOT = path.join(__dirname, 'public');
 const UPDATE_EVERY_MS = 24 * 60 * 60 * 1000; // daily
 

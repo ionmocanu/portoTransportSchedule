@@ -3,7 +3,7 @@ services:
     build: .
     container_name: porto_transport_schedule
     ports:
-      # Maps port 8080 on your server to the port your Node app uses inside the container
+      # Maps port 8088 on your server to the port your Node app uses inside the container
       # If server.js runs on a different port (like 80 or 3000), change the SECOND number to match it.
       - "8088:3000" 
     restart: unless-stopped
