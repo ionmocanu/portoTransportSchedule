@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EEF3F7">
+<title>Próximo — Porto Metro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <span class="masthead__mark" aria-hidden="true">M</span>
+  <h1 class="masthead__title">Próximo</h1>
+  <button class="masthead__refresh" id="refresh" type="button" aria-label="Refresh now">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+  </button>
+</header>
+
+<main>
+  <div class="chooser">
+    <button class="chooser__current" id="stop-button" type="button" aria-expanded="false" aria-controls="stop-panel">
+      <span class="chooser__eyebrow">Stop</span>
+      <span class="chooser__name" id="stop-name">—</span>
+      <svg class="chooser__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="chooser__panel" id="stop-panel" hidden>
+      <input class="chooser__search" id="stop-search" type="search"
+             placeholder="Search stops…" autocomplete="off" spellcheck="false"
+             aria-label="Search stops">
+      <div class="chooser__recents" id="stop-recents"></div>
+      <ul class="chooser__list" id="stop-list" role="listbox" aria-label="All stops"></ul>
+    </div>
+  </div>
+
+  <section class="picker" aria-labelledby="picker-heading">
+    <h2 class="picker__heading" id="picker-heading">Which way are you going?</h2>
+    <div class="picker__diagram" id="diagram"></div>
+  </section>
+
+  <section class="board" id="board" aria-live="polite" aria-busy="true">
+    <div class="board__loading">Loading times…</div>
+  </section>
+
+  <p class="stamp" id="stamp"></p>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
