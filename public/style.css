@@ -421,21 +421,10 @@ li:last-child .chooser__item {
   align-items: center;
   gap: 7px;
   width: 100%;
-  border: 0;
   padding: 3px 4px;
   margin: -3px -4px;
   border-radius: 6px;
   background: transparent;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 140ms;
-}
-.dirpill:hover {
-  background: rgba(22, 48, 92, 0.06);
-}
-.dircard--active .dirpill:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 .dirpill--active {
   background: rgba(22, 48, 92, 0.08);
@@ -489,12 +478,13 @@ li:last-child .chooser__item {
   display: none;
 }
 .linedot {
-  width: 40px;
+  min-width: 40px;
   height: 40px;
+  padding: 0 6px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 20px;
   border: 2px solid transparent;
   background: var(--c, var(--ink));
   color: #fff;
@@ -502,6 +492,7 @@ li:last-child .chooser__item {
   font-weight: 700;
   font-size: 15px;
   line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition: transform 120ms, box-shadow 120ms;
 }
@@ -569,20 +560,24 @@ li:last-child .chooser__item {
 .badge {
   display: grid;
   place-items: center;
-  width: 28px;
+  min-width: 28px;
   height: 28px;
-  border-radius: 50%;
+  padding: 0 6px;
+  border-radius: 14px;
   background: var(--line, var(--ink));
   color: #fff;
   font-family: var(--display);
   font-weight: 700;
   font-size: 14px;
   line-height: 1;
+  white-space: nowrap;
   flex: none;
 }
 .badge--lg {
-  width: 38px;
+  min-width: 38px;
   height: 38px;
+  padding: 0 8px;
+  border-radius: 19px;
   font-size: 18px;
 }
 .badge--onlight {
@@ -931,28 +926,28 @@ body {
 /* Metro mark in masthead flips to a bus glyph on the buses tab is unnecessary;
    keep the M. */
 
-/* ── Fare calculator ────────────────────────────────────────────── */
-.fare {
-  margin-top: 20px;
+/* ── Trip planner ───────────────────────────────────────────────── */
+.planner {
+  margin-top: 14px;
   padding: 16px;
   background: var(--glaze);
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
 }
-.fare__heading {
+.planner__heading {
   margin: 0 0 12px;
   font-family: var(--display);
   font-size: 15px;
   font-weight: 700;
   color: var(--ink);
 }
-.fare__row {
+.planner__row {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 8px;
 }
-.fare__select {
+.planner__select {
   width: 100%;
   padding: 10px 8px;
   border: 1px solid var(--hairline);
@@ -962,17 +957,99 @@ body {
   font-size: 14px;
   color: var(--ink);
 }
-.fare__arrow {
+.planner__swap {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline-firm);
+  border-radius: 50%;
+  background: transparent;
   color: var(--ink-soft);
-  font-size: 16px;
+  cursor: pointer;
+  transition: transform 160ms, color 140ms;
 }
-.fare__result {
+.planner__swap svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.planner__swap:hover {
+  color: var(--ink);
+}
+.planner__swap:active {
+  transform: rotate(180deg);
+}
+.planner__result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.planner__tag {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--porcelain);
+  color: var(--ink-soft);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.planner__leg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--porcelain);
+  border-radius: var(--r-md);
+}
+.planner__legoptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.planner__legoption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.planner__legheadsign {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.planner__legstops {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.planner__transfer {
+  padding: 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.planner__error {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.planner__fares {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
 }
-.fare__option {
+.planner__fare {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -980,24 +1057,31 @@ body {
   background: var(--porcelain);
   border-radius: var(--r-sm);
 }
-.fare__price {
+.planner__fareprice {
   font-family: var(--display);
   font-size: 18px;
   font-weight: 700;
   color: var(--ink);
 }
-.fare__line {
+.planner__fareline {
   font-size: 12px;
   color: var(--ink-soft);
 }
-.fare__error {
-  font-size: 13px;
+
+/* ── Disclaimer ─────────────────────────────────────────────────── */
+.disclaimer {
+  margin: 24px 0 0;
+  padding: 0 4px;
+  text-align: center;
+  font-family: var(--body);
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--ink-soft);
 }
 
 /* ── Footer ─────────────────────────────────────────────────────── */
 .footer {
-  margin: 24px 0 0;
+  margin: 10px 0 0;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
   text-align: center;
   font-family: var(--body);

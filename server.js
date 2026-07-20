@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const gtfs = require('./gtfs');
+const gtfsCp = require('./gtfs_cp');
 const updater = require('./update-gtfs');
 
 const PORT = process.env.PORT || 8088;
@@ -9,6 +10,7 @@ const ROOT = path.join(__dirname, 'public');
 const UPDATE_EVERY_MS = 24 * 60 * 60 * 1000;
 
 gtfs.load();
+gtfsCp.load();
 
 async function checkFeed() {
   try {
@@ -43,6 +45,15 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/api/fare') {
     const payload = gtfs.getFare(url.searchParams.get('from'), url.searchParams.get('to'));
+    return json(res, payload.error ? 400 : 200, payload);
+  }
+  if (url.pathname === '/api/trip') {
+    const payload = gtfs.getTripPlan(url.searchParams.get('from'), url.searchParams.get('to'));
+    return json(res, payload.error ? 400 : 200, payload);
+  }
+  if (url.pathname === '/api/cp/config') return json(res, 200, gtfsCp.getConfig());
+  if (url.pathname === '/api/cp/departures') {
+    const payload = gtfsCp.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
     return json(res, payload.error ? 400 : 200, payload);
   }
 

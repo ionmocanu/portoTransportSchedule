@@ -7,6 +7,7 @@ export let STOPS = {};
 export let LINE_COLORS = {};
 export let HOLIDAYS = [];
 export let FEED_VALID_UNTIL = null;
+export let DEFAULT_STOP = null;
 
 export async function init() {
   const res = await fetch('/api/config');
@@ -14,7 +15,7 @@ export async function init() {
   const cfg = await res.json();
 
   LINE_COLORS = cfg.line_colors;
-  window.DEFAULT_STOP = cfg.default_stop;
+  DEFAULT_STOP = cfg.default_stop;
   HOLIDAYS = cfg.holidays || [];
   FEED_VALID_UNTIL = cfg.feed_valid_until || null;
   STOPS = Object.fromEntries(
@@ -39,5 +40,14 @@ export async function getFare(fromStopId, toStopId) {
   );
   const payload = await res.json();
   if (!res.ok) throw new Error(payload.error || `fare ${res.status}`);
+  return payload;
+}
+
+export async function getTripPlan(fromStopId, toStopId) {
+  const res = await fetch(
+    `/api/trip?from=${encodeURIComponent(fromStopId)}&to=${encodeURIComponent(toStopId)}`
+  );
+  const payload = await res.json();
+  if (!res.ok) throw new Error(payload.error || `trip ${res.status}`);
   return payload;
 }

@@ -48,6 +48,7 @@ const db = {
   fares: new Map(),       // fare_id → price (EUR)
   fareRules: new Map(),   // 'originZone|destZone' → [{ route, price }]
   departures: new Map(),  // 'stopId|dir' → [{ sec, route, headsign, service }]
+  routeStopOrder: new Map(), // 'route|dir' → [stopId, ...] in travel order
   stops: [],              // config for the frontend, built after load
   loadedAt: null,
 };
@@ -122,8 +123,11 @@ function load() {
 
   // Pass 1 over stop_times: every row is a candidate; track last stop_sequence
   // per trip so we can drop rows where the trip terminates (nothing departs).
+  // Also keep each trip's full ordered stop list, for the trip planner's
+  // "which stops does this line pass through, in order" question.
   const candidates = [];
   const lastSeq = new Map();
+  const tripStops = new Map(); // tripId → [{ seq, stop }]
   readCsv('stop_times.txt', (r) => {
     const seq = Number(r.stop_sequence);
     const prev = lastSeq.get(r.trip_id);
@@ -134,7 +138,24 @@ function load() {
       sec: hmsToSec(r.departure_time),
       seq,
     });
+    if (!tripStops.has(r.trip_id)) tripStops.set(r.trip_id, []);
+    tripStops.get(r.trip_id).push({ seq, stop: r.stop_id });
   });
+
+  // Per (route, direction), keep the longest observed trip as the
+  // representative stopping pattern — short-turning trips would otherwise
+  // under-report which stops a line actually serves.
+  db.routeStopOrder.clear();
+  const bestPattern = new Map(); // 'route|dir' → ordered stop array
+  for (const [tripId, stopsArr] of tripStops) {
+    const trip = trips.get(tripId);
+    if (!trip) continue;
+    const k = key(trip.route, trip.dir);
+    const cur = bestPattern.get(k);
+    if (cur && cur.length >= stopsArr.length) continue;
+    bestPattern.set(k, [...stopsArr].sort((a, b) => a.seq - b.seq).map((s) => s.stop));
+  }
+  for (const [k, stops] of bestPattern) db.routeStopOrder.set(k, stops);
 
   db.departures.clear();
   let kept = 0;
@@ -336,6 +357,130 @@ function getFare(originStopId, destStopId) {
   };
 }
 
+/* Trip planner — no real-time chaining (no arrival times used), just: is
+   there a shared line (direct), and if not, what's the nearest stop where a
+   line reachable from the origin crosses a line that reaches the
+   destination. "Nearest" means fewest stops away from the origin, checked
+   in order — the first valid interchange found along the way, not just any
+   interchange on the line. When several lines equally serve a leg (e.g.
+   multiple lines run through the same interchange toward the destination),
+   all of them are returned instead of picking one arbitrarily. */
+function getTripPlan(originId, destId) {
+  const origin = db.stops.find((s) => s.id === originId);
+  const dest = db.stops.find((s) => s.id === destId);
+  if (!origin) return { error: 'unknown_origin' };
+  if (!dest) return { error: 'unknown_destination' };
+  if (originId === destId) return { error: 'same_stop' };
+
+  // Does `to` appear after `from` along (route, some direction)? Returns the
+  // direction and hop count if so, checking both directions since we don't
+  // know upfront which one heads the right way.
+  function reachable(route, fromStop, toStop) {
+    let best = null;
+    for (const dir of ['0', '1']) {
+      const order = db.routeStopOrder.get(key(route, dir));
+      if (!order) continue;
+      const i = order.indexOf(fromStop);
+      const j = order.indexOf(toStop);
+      if (i === -1 || j === -1 || j <= i) continue;
+      const hops = j - i;
+      if (!best || hops < best.hops) best = { direction: dir, hops };
+    }
+    return best;
+  }
+
+  // Every line shared between two stops that actually goes the right way,
+  // narrowed down to the ones tied for fewest stops — if two lines both get
+  // you there in the same number of hops, both are genuinely valid options.
+  function findOptions(fromStopObj, toStopObj) {
+    const candidates = [];
+    const shared = fromStopObj.lines.filter((l) => toStopObj.lines.includes(l));
+    for (const route of shared) {
+      const leg = reachable(route, fromStopObj.id, toStopObj.id);
+      if (leg) candidates.push({ route, direction: leg.direction, hops: leg.hops });
+    }
+    if (!candidates.length) return [];
+    const minHops = Math.min(...candidates.map((c) => c.hops));
+    return candidates.filter((c) => c.hops === minHops);
+  }
+
+  function buildLeg(fromStopObj, toStopObj, candidates) {
+    const options = candidates.map(({ route, direction }) => {
+      const r = db.routes.get(route);
+      // The headsign is what a rider actually sees on the platform at the
+      // departure stop for THIS specific line — not the stop's generic
+      // direction label, which is just whichever headsign is most common
+      // across every line sharing that direction_id.
+      const directionMeta = fromStopObj.directions.find((d) => d.id === direction);
+      const lineMeta = directionMeta?.lines.find((l) => l.route === route);
+      return {
+        route,
+        route_short: r?.short || route,
+        route_color: r?.color || '#16305C',
+        direction_id: direction,
+        headsign: lineMeta?.headsign || directionMeta?.label || toStopObj.name,
+      };
+    });
+    return {
+      from_stop: fromStopObj.id,
+      from_name: fromStopObj.name,
+      to_stop: toStopObj.id,
+      to_name: toStopObj.name,
+      options,
+    };
+  }
+
+  // 1. Direct: any line(s) serving both stops, in a direction that actually
+  // goes from origin toward destination.
+  const directOptions = findOptions(origin, dest);
+  if (directOptions.length) {
+    return { type: 'direct', legs: [buildLeg(origin, dest, directOptions)] };
+  }
+
+  // 2. One transfer: walk forward from the origin along each of its lines,
+  // stop by stop, and take the first stop reached that also sits on a line
+  // which can get to the destination — then separately collect every line
+  // option for each leg of that specific path.
+  let best = null; // { stop, hop1 }
+  for (const route1 of origin.lines) {
+    for (const dir1 of ['0', '1']) {
+      const order1 = db.routeStopOrder.get(key(route1, dir1));
+      if (!order1) continue;
+      const i0 = order1.indexOf(originId);
+      if (i0 === -1) continue;
+
+      for (let idx = i0 + 1; idx < order1.length; idx++) {
+        const hop1 = idx - i0;
+        if (best && hop1 >= best.hop1) break; // can't beat the current best from here on
+        const stopId = order1[idx];
+        const stop = db.stops.find((s) => s.id === stopId);
+        if (!stop) continue;
+
+        const canTransfer = stop.lines.some(
+          (l) => l !== route1 && dest.lines.includes(l) && reachable(l, stopId, destId)
+        );
+        if (canTransfer) {
+          if (!best || hop1 < best.hop1) best = { stop, hop1 };
+          break; // nearest transfer-capable stop on this particular path
+        }
+      }
+    }
+  }
+
+  if (!best) return { error: 'no_route_found' };
+
+  const leg1Options = findOptions(origin, best.stop);
+  const leg2Options = findOptions(best.stop, dest);
+
+  return {
+    type: 'transfer',
+    legs: [
+      buildLeg(origin, best.stop, leg1Options),
+      buildLeg(best.stop, dest, leg2Options),
+    ],
+  };
+}
+
 /* Extract all dates where an exception/holiday is explicitly configured, converted to YYYY-MM-DD */
 function getHolidayDates() {
   const dates = [];
@@ -406,4 +551,4 @@ function secToHm(sec) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-module.exports = { load, getConfig, getDepartures, getFare };
+module.exports = { load, getConfig, getDepartures, getFare, getTripPlan };

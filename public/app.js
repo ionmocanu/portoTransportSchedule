@@ -1,8 +1,9 @@
-import { STOPS, LINE_COLORS, HOLIDAYS, FEED_VALID_UNTIL, init, getDepartures, getFare } from './data.js';
+import * as metroData from './data.js';
+import * as cpData from './data_cp.js';
+import { getFare, getTripPlan } from './data.js';
 import { initI18n, setLang, getLang, t, LANGS } from './i18n.js';
 
-
-const fetchDepartures = getDepartures;
+const FEEDS = { metro: metroData, cp: cpData };
 
 const REFETCH_MS = 60_000;
 const TICK_MS = 5_000;
@@ -22,32 +23,53 @@ const el = {
   board: document.getElementById('board'),
   stamp: document.getElementById('stamp'),
   feedValidity: document.getElementById('feed-validity'),
-  fareFrom: document.getElementById('fare-from'),
-  fareTo: document.getElementById('fare-to'),
-  fareResult: document.getElementById('fare-result'),
+  plannerFrom: document.getElementById('planner-from'),
+  plannerTo: document.getElementById('planner-to'),
+  plannerSwap: document.getElementById('planner-swap'),
+  plannerResult: document.getElementById('planner-result'),
   langSwitch: document.getElementById('lang-switch'),
+  tabbar: document.getElementById('tabbar'),
+  plannerSection: document.querySelector('.planner'),
   refresh: document.getElementById('refresh'),
   clockDisplay: document.getElementById('clock-display'),
   holidayWarning: document.getElementById('holiday-warning'),
 };
 
-const state = { stopId: null, directionId: null, lineFilter: null, payload: null, fetchedAt: null, fareFromTouched: false };
+const state = {
+  mode: 'metro',
+  stopId: null, directionId: null, lineFilter: null, payload: null, fetchedAt: null,
+  plannerFromTouched: false,
+};
+
+// feed = the data client (STOPS/LINE_COLORS/getDepartures/...) for the active tab.
+let feed = metroData;
 
 const remember = {
   read() {
     try { return JSON.parse(localStorage.getItem('proximo') || 'null'); }
     catch { return null; }
   },
-  write(patch) {
-    try {
-      const cur = this.read() || {};
-      localStorage.setItem('proximo', JSON.stringify({ ...cur, ...patch }));
-    } catch { /* fine */ }
+  write(all) {
+    try { localStorage.setItem('proximo', JSON.stringify(all)); } catch { /* fine */ }
   },
-  pushRecent(stopId) {
+  readScope(scope) {
     const cur = this.read() || {};
+    if (cur[scope]) return cur[scope];
+    // Legacy pre-multi-feed saves kept the metro pick flat at the top level.
+    if (scope === 'metro' && (cur.stopId || cur.recents)) {
+      return { stopId: cur.stopId, directionId: cur.directionId, recents: cur.recents };
+    }
+    return {};
+  },
+  writeScope(scope, patch) {
+    const cur = this.read() || {};
+    cur[scope] = { ...this.readScope(scope), ...patch };
+    this.write(cur);
+  },
+  pushRecent(scope, stopId) {
+    const cur = this.readScope(scope);
     const recents = [stopId, ...(cur.recents || []).filter((id) => id !== stopId)].slice(0, 4);
-    this.write({ recents });
+    this.writeScope(scope, { recents });
     return recents;
   },
 };
@@ -60,27 +82,27 @@ function parkingIconHtml(stop) {
 }
 
 function selectStop(stopId, directionId) {
-  const stop = STOPS[stopId];
+  const stop = feed.STOPS[stopId];
   state.stopId = stopId;
   state.directionId = stop.directions.some((d) => d.id === directionId)
     ? directionId
     : stop.directions[0].id;
   state.lineFilter = null;
 
-  remember.write({ stopId: state.stopId, directionId: state.directionId });
-  remember.pushRecent(state.stopId);
+  remember.writeScope(state.mode, { stopId: state.stopId, directionId: state.directionId });
+  remember.pushRecent(state.mode, state.stopId);
   el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
   closeChooser();
   renderDiagram();
   renderLineControls();
   load();
-  syncFareFrom(state.stopId);
+  if (state.mode === 'metro') syncPlannerFrom(state.stopId);
 }
 
 function selectDirection(directionId) {
   if (directionId !== state.directionId) state.lineFilter = null;
   state.directionId = directionId;
-  remember.write({ directionId });
+  remember.writeScope(state.mode, { directionId });
   renderDiagram();
   renderLineControls();
   load();
@@ -90,7 +112,7 @@ function selectLine(routeId, directionId) {
   const directionChanged = directionId !== state.directionId;
   state.directionId = directionId;
   state.lineFilter = routeId;
-  remember.write({ directionId });
+  remember.writeScope(state.mode, { directionId });
   renderDiagram();
   renderLineControls();
   if (directionChanged) load();
@@ -110,7 +132,7 @@ function renderLineFilter() {
     el.lineFilter.hidden = true;
     return;
   }
-  const stop = STOPS[state.stopId];
+  const stop = feed.STOPS[state.stopId];
   const direction = stop.directions.find((d) => d.id === state.directionId);
   const line = direction?.lines.find((l) => l.route === state.lineFilter);
   el.lineFilterLabel.innerHTML = line
@@ -129,7 +151,7 @@ function renderLineControls() {
    are small). Shown only when the current direction has more than one line. */
 function renderLineDots() {
   if (!el.lineDots) return;
-  const stop = STOPS[state.stopId];
+  const stop = feed.STOPS[state.stopId];
   const direction = stop?.directions.find((d) => d.id === state.directionId);
   const lines = direction?.lines || [];
 
@@ -174,15 +196,15 @@ function closeChooser() {
 }
 
 function renderRecents() {
-  const recents = (remember.read()?.recents || []).filter(
-    (id) => STOPS[id] && id !== state.stopId
+  const recents = (remember.readScope(state.mode).recents || []).filter(
+    (id) => feed.STOPS[id] && id !== state.stopId
   );
   el.stopRecents.replaceChildren(
     ...recents.map((id) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'chip';
-      b.textContent = STOPS[id].name;
+      b.textContent = feed.STOPS[id].name;
       b.addEventListener('click', () => selectStop(id, state.directionId));
       return b;
     })
@@ -193,7 +215,7 @@ const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCa
 
 function renderStopList(query) {
   const q = fold(query.trim());
-  const matches = Object.values(STOPS).filter((s) => !q || fold(s.name).includes(q));
+  const matches = Object.values(feed.STOPS).filter((s) => !q || fold(s.name).includes(q));
 
   if (!matches.length) {
     el.stopList.innerHTML = `<li class="chooser__none">${t('station.none', { query })}</li>`;
@@ -209,7 +231,7 @@ function renderStopList(query) {
       b.setAttribute('role', 'option');
       b.setAttribute('aria-selected', String(stop.id === state.stopId));
       const dots = stop.lines
-        .map((l) => `<span class="dot" style="--c:${LINE_COLORS[l] || ''}"></span>`)
+        .map((l) => `<span class="dot" style="--c:${feed.LINE_COLORS[l] || ''}"></span>`)
         .join('');
       b.innerHTML = `<span class="chooser__itemname">${stop.name}${parkingIconHtml(stop)}</span><span class="chooser__dots">${dots}</span>`;
       b.addEventListener('click', () => selectStop(stop.id, state.directionId));
@@ -221,7 +243,7 @@ function renderStopList(query) {
 
 /* ── Direction picker ───────────────────────────────────────────── */
 function renderDiagram() {
-  const stop = STOPS[state.stopId];
+  const stop = feed.STOPS[state.stopId];
 
   el.diagram.replaceChildren(
     ...stop.directions.map((dir) => dirCard(dir, stop.directions.length))
@@ -257,20 +279,15 @@ function dirCard(direction, total) {
   return card;
 }
 
+/* Display-only — picking a direction card selects the direction, nothing
+   else. Filtering by line only happens via the dots above the board. */
 function linePill(l, directionId) {
   const isActive = l.route === state.lineFilter && directionId === state.directionId;
-  const pill = document.createElement('button');
-  pill.type = 'button';
+  const pill = document.createElement('span');
   pill.className = 'dirpill' + (isActive ? ' dirpill--active' : '');
-  pill.setAttribute('aria-pressed', String(isActive));
-  pill.setAttribute('aria-label', t('line.filterAria', { line: l.short, headsign: l.headsign }));
   pill.innerHTML = `
     <span class="dirpill__badge" style="background:${l.color}">${l.short}</span>
     <span class="dirpill__dest">${l.headsign}</span>`;
-  pill.addEventListener('click', (e) => {
-    e.stopPropagation();
-    isActive ? clearLineFilter() : selectLine(l.route, directionId);
-  });
   return pill;
 }
 
@@ -302,7 +319,7 @@ function lastTagHtml(d) {
 function nextCard(d) {
   const div = document.createElement('article');
   div.className = 'next';
-  div.style.setProperty('--line', LINE_COLORS[d.route_id] || 'var(--ink)');
+  div.style.setProperty('--line', feed.LINE_COLORS[d.route_id] || 'var(--ink)');
   const mins = Math.floor(d.seconds_left / 60);
   div.innerHTML = `
     <span class="badge badge--lg">${d.line}</span>
@@ -322,7 +339,7 @@ function row(d) {
   div.className = 'row';
   const mins = Math.max(0, Math.floor(d.seconds_left / 60));
   div.innerHTML = `
-    <span class="badge" style="--line:${LINE_COLORS[d.route_id] || 'var(--ink)'}">${d.line}</span>
+    <span class="badge" style="--line:${feed.LINE_COLORS[d.route_id] || 'var(--ink)'}">${d.line}</span>
     <div>
       <div class="row__headsign">${d.headsign}${lastTagHtml(d)}</div>
       <div class="row__time">${d.departure_time}</div>
@@ -346,7 +363,7 @@ async function load() {
   el.refresh.dataset.spinning = 'true';
 
   try {
-    const payload = await fetchDepartures(state.stopId, state.directionId);
+    const payload = await feed.getDepartures(state.stopId, state.directionId);
     if (token !== inflight) return;
     state.payload = payload;
     state.fetchedAt = Date.now();
@@ -382,62 +399,106 @@ function stamp() {
   }
 }
 
-const DEFAULT_FARE_TO = '5726'; // Trindade — the most central stop
+const DEFAULT_PLANNER_TO = '5726'; // Trindade — the most central stop
 
-/* ── Fare calculator ────────────────────────────────────────────── */
-function initFareCalculator() {
-  if (!el.fareFrom || !el.fareTo) return;
+/* ── Trip planner (route + fare together) ─────────────────────────── */
+function initTripPlanner() {
+  if (!el.plannerFrom || !el.plannerTo) return;
 
-  const stops = Object.values(STOPS).sort((a, b) => a.name.localeCompare(b.name, 'pt'));
+  const stops = Object.values(metroData.STOPS).sort((a, b) => a.name.localeCompare(b.name, 'pt'));
   const options = stops.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-  el.fareFrom.innerHTML = options;
-  el.fareTo.innerHTML = options;
+  el.plannerFrom.innerHTML = options;
+  el.plannerTo.innerHTML = options;
 
-  el.fareFrom.value = state.stopId || stops[0]?.id;
-  el.fareTo.value = STOPS[DEFAULT_FARE_TO] && DEFAULT_FARE_TO !== el.fareFrom.value
-    ? DEFAULT_FARE_TO
-    : stops.find((s) => s.id !== el.fareFrom.value)?.id || stops[0]?.id;
+  el.plannerFrom.value = (state.mode === 'metro' && state.stopId) || stops[0]?.id;
+  el.plannerTo.value = metroData.STOPS[DEFAULT_PLANNER_TO] && DEFAULT_PLANNER_TO !== el.plannerFrom.value
+    ? DEFAULT_PLANNER_TO
+    : stops.find((s) => s.id !== el.plannerFrom.value)?.id || stops[0]?.id;
 
-  el.fareFrom.addEventListener('change', () => {
-    state.fareFromTouched = true;
-    loadFare();
+  el.plannerFrom.addEventListener('change', () => {
+    state.plannerFromTouched = true;
+    loadTripPlan();
   });
-  el.fareTo.addEventListener('change', loadFare);
-  loadFare();
+  el.plannerTo.addEventListener('change', loadTripPlan);
+  el.plannerSwap?.addEventListener('click', swapPlannerStops);
+  loadTripPlan();
 }
 
-/* Keeps the fare "from" in sync with the main stop selector, unless the
+/* Swapping counts as manually touching "from" — it should stay put after
+   this, not snap back to the main stop selector on the next selection. */
+function swapPlannerStops() {
+  const from = el.plannerFrom.value;
+  el.plannerFrom.value = el.plannerTo.value;
+  el.plannerTo.value = from;
+  state.plannerFromTouched = true;
+  loadTripPlan();
+}
+
+/* Keeps the planner "from" in sync with the main stop selector, unless the
    user has manually changed it — then it stops following. */
-function syncFareFrom(stopId) {
-  if (!el.fareFrom || state.fareFromTouched) return;
-  if (el.fareFrom.value === stopId) return;
-  el.fareFrom.value = stopId;
-  loadFare();
+function syncPlannerFrom(stopId) {
+  if (!el.plannerFrom || state.plannerFromTouched) return;
+  if (el.plannerFrom.value === stopId) return;
+  el.plannerFrom.value = stopId;
+  loadTripPlan();
 }
 
-async function loadFare() {
-  const from = el.fareFrom.value;
-  const to = el.fareTo.value;
+async function loadTripPlan() {
+  const from = el.plannerFrom.value;
+  const to = el.plannerTo.value;
   if (!from || !to) return;
 
-  try {
-    const fare = await getFare(from, to);
-    el.fareResult.innerHTML = fare.fares
-      .map((f) => `
-        <div class="fare__option">
-          <span class="fare__price">€${f.price.toFixed(2)}</span>
-          ${f.route_name ? `<span class="fare__line">${t('fare.via', { line: f.route_name })}</span>` : ''}
-        </div>`)
-      .join('');
-  } catch (err) {
-    console.error(err);
-    el.fareResult.innerHTML = `<span class="fare__error">${t('fare.error')}</span>`;
+  if (from === to) {
+    el.plannerResult.innerHTML = `<span class="planner__error">${t('planner.error')}</span>`;
+    return;
   }
+
+  const [planResult, fareResult] = await Promise.allSettled([getTripPlan(from, to), getFare(from, to)]);
+  const parts = [];
+
+  if (planResult.status === 'fulfilled') {
+    const plan = planResult.value;
+    if (plan.type === 'direct') parts.push(`<div class="planner__tag">${t('planner.direct')}</div>`);
+    plan.legs.forEach((leg, i) => {
+      if (i > 0) parts.push(`<div class="planner__transfer">${t('planner.transferAt', { stop: leg.from_name })}</div>`);
+
+      const options = leg.options.map((o) => `
+        <div class="planner__legoption">
+          <span class="badge" style="--line:${o.route_color}">${o.route_short}</span>
+          <span class="planner__legheadsign">${o.headsign}</span>
+        </div>`).join('');
+
+      parts.push(`
+        <div class="planner__leg">
+          <div class="planner__legoptions">${options}</div>
+          <div class="planner__legstops">${leg.from_name} → ${leg.to_name}</div>
+        </div>`);
+    });
+  } else {
+    console.error(planResult.reason);
+    parts.push(`<span class="planner__error">${t('planner.error')}</span>`);
+  }
+
+  if (fareResult.status === 'fulfilled') {
+    parts.push(`
+      <div class="planner__fares">
+        ${fareResult.value.fares.map((f) => `
+          <div class="planner__fare">
+            <span class="planner__fareprice">€${f.price.toFixed(2)}</span>
+            ${f.route_name ? `<span class="planner__fareline">${t('fare.via', { line: f.route_name })}</span>` : ''}
+          </div>`).join('')}
+      </div>`);
+  } else {
+    console.error(fareResult.reason);
+    parts.push(`<span class="planner__error">${t('fare.error')}</span>`);
+  }
+
+  el.plannerResult.innerHTML = parts.join('');
 }
 
 function renderFeedValidity() {
-  if (!FEED_VALID_UNTIL || !el.feedValidity) return;
-  const until = FEED_VALID_UNTIL;
+  if (!feed.FEED_VALID_UNTIL || !el.feedValidity) return;
+  const until = feed.FEED_VALID_UNTIL;
   const pretty = `${until.slice(6, 8)}/${until.slice(4, 6)}/${until.slice(0, 4)}`;
   el.feedValidity.textContent = t('feed.validUntil', { date: pretty });
 }
@@ -460,7 +521,7 @@ function updateClock() {
   const todayKey = `${yyyy}-${mm}-${dd}`;
 
   // This now checks against the dynamically loaded GTFS data!
-  if (HOLIDAYS.includes(todayKey)) {
+  if (feed.HOLIDAYS.includes(todayKey)) {
     el.holidayWarning.hidden = false;
   } else {
     el.holidayWarning.hidden = true;
@@ -494,7 +555,7 @@ async function switchLang(code) {
 function refreshUI() {
   updateClock();
   if (state.stopId) {
-    const stop = STOPS[state.stopId];
+    const stop = feed.STOPS[state.stopId];
     el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
     renderDiagram();
   }
@@ -506,12 +567,54 @@ function refreshUI() {
   renderBoard();
   stamp();
   renderFeedValidity();
-  if (el.fareFrom.value && el.fareTo.value) loadFare();
+  if (state.mode === 'metro' && el.plannerFrom.value && el.plannerTo.value) loadTripPlan();
+}
+
+/* ── Tabs (METRO / Comboio) ────────────────────────────────────── */
+function renderTabbar() {
+  if (!el.tabbar) return;
+  el.tabbar.querySelectorAll('.tab').forEach((btn) => {
+    btn.setAttribute('aria-selected', String(btn.dataset.mode === state.mode));
+  });
+}
+
+async function switchMode(mode) {
+  if (mode === state.mode || !FEEDS[mode]) return;
+
+  state.mode = mode;
+  feed = FEEDS[mode];
+  state.lineFilter = null;
+  renderTabbar();
+  if (el.plannerSection) el.plannerSection.hidden = mode !== 'metro';
+
+  if (!Object.keys(feed.STOPS).length) {
+    document.body.dataset.loading = 'true';
+    try {
+      await feed.init();
+    } catch (err) {
+      console.error(err);
+      el.board.innerHTML =
+        `<div class="board__empty"><strong>${t('boot.error.title')}</strong>${t('boot.error.body')}</div>`;
+      document.body.dataset.loading = 'false';
+      return;
+    }
+    document.body.dataset.loading = 'false';
+  }
+
+  closeChooser();
+  const saved = remember.readScope(mode);
+  let startId = saved.stopId;
+  if (!startId || !feed.STOPS[startId]) startId = feed.DEFAULT_STOP;
+  selectStop(startId, saved.directionId);
+  renderFeedValidity();
 }
 
 /* ── Boot ───────────────────────────────────────────────────────── */
 el.refresh.addEventListener('click', load);
 el.lineFilterClear?.addEventListener('click', clearLineFilter);
+el.tabbar?.querySelectorAll('.tab').forEach((btn) => {
+  btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+});
 
 // Start the clock and update it every 1 second (1000ms)
 updateClock();
@@ -524,9 +627,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
 (async () => {
   await initI18n();
   renderLangSwitch();
+  renderTabbar();
 
   try {
-    await init();
+    await metroData.init();
   } catch (err) {
     console.error(err);
     el.board.innerHTML =
@@ -535,7 +639,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
   }
 
   renderFeedValidity();
-  initFareCalculator();
+  initTripPlanner();
 
   el.stopButton.addEventListener('click', () =>
     el.stopPanel.hidden ? openChooser() : closeChooser()
@@ -548,10 +652,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
     if (e.key === 'Escape') closeChooser();
   });
 
-  const saved = remember.read();
+  const saved = remember.readScope('metro');
   const legacy = { viso: '5729', forum_maia: '5760' };
-  let startId = saved?.stopId;
-  if (startId && !STOPS[startId]) startId = legacy[startId];
-  if (!startId || !STOPS[startId]) startId = window.DEFAULT_STOP;
-  selectStop(startId, saved?.directionId);
+  let startId = saved.stopId;
+  if (startId && !metroData.STOPS[startId]) startId = legacy[startId];
+  if (!startId || !metroData.STOPS[startId]) startId = metroData.DEFAULT_STOP;
+  selectStop(startId, saved.directionId);
 })();
