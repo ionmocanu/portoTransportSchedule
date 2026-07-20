@@ -41,6 +41,10 @@ const server = http.createServer((req, res) => {
     const payload = gtfs.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
     return json(res, payload.error ? 400 : 200, payload);
   }
+  if (url.pathname === '/api/fare') {
+    const payload = gtfs.getFare(url.searchParams.get('from'), url.searchParams.get('to'));
+    return json(res, payload.error ? 400 : 200, payload);
+  }
 
   let rel = decodeURIComponent(url.pathname);
   if (rel === '/') rel = '/index.html';

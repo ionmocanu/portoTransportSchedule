@@ -745,6 +745,20 @@ body {
   flex: 1;
 }
 
+.parking-icon {
+  width: 15px;
+  height: 15px;
+  margin-left: 6px;
+  vertical-align: -2px;
+  flex: none;
+}
+
+.chooser__name .parking-icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+
 /* ── Near me ────────────────────────────────────────────────────── */
 .near__cta {
   padding: 13px;
@@ -778,3 +792,77 @@ body {
 
 /* Metro mark in masthead flips to a bus glyph on the buses tab is unnecessary;
    keep the M. */
+
+/* ── Fare calculator ────────────────────────────────────────────── */
+.fare {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--glaze);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+}
+.fare__heading {
+  margin: 0 0 12px;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.fare__row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.fare__select {
+  width: 100%;
+  padding: 10px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--porcelain);
+  font-family: var(--body);
+  font-size: 14px;
+  color: var(--ink);
+}
+.fare__arrow {
+  color: var(--ink-soft);
+  font-size: 16px;
+}
+.fare__result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.fare__option {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--porcelain);
+  border-radius: var(--r-sm);
+}
+.fare__price {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.fare__line {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.fare__error {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+.footer {
+  margin: 24px 0 0;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  text-align: center;
+  font-family: var(--body);
+  font-size: 11px;
+  color: var(--ink-soft);
+}

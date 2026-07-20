@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#EEF3F7">
   <title>Próximo — Porto Metro</title>
+  <link rel="icon" href="./images/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -59,8 +60,21 @@
       <div class="board__loading">Loading times…</div>
     </section>
 
+    <section class="fare" aria-labelledby="fare-heading">
+      <h2 class="fare__heading" id="fare-heading">Trip fare</h2>
+      <div class="fare__row">
+        <select class="fare__select" id="fare-from" aria-label="From station"></select>
+        <span class="fare__arrow" aria-hidden="true">→</span>
+        <select class="fare__select" id="fare-to" aria-label="To station"></select>
+      </div>
+      <div class="fare__result" id="fare-result"></div>
+    </section>
+
     <p class="stamp" id="stamp"></p>
+    <p class="stamp" id="feed-validity"></p>
   </main>
+
+  <footer class="footer">Made by Nicu</footer>
 
   <script type="module" src="app.js"></script>
 </body>

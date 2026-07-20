@@ -43,6 +43,10 @@ const db = {
   stopNames: new Map(),   // stop_id → name
   calendar: new Map(),    // service_id → { days:[7], start, end }
   exceptions: new Map(),  // 'YYYYMMDD' → Map(service_id → 1|2)
+  amenities: new Map(),   // stop_id → { hasParking, free }
+  stopZones: new Map(),   // stop_id → zone_id
+  fares: new Map(),       // fare_id → price (EUR)
+  fareRules: new Map(),   // 'originZone|destZone' → [{ route, price }]
   departures: new Map(),  // 'stopId|dir' → [{ sec, route, headsign, service }]
   stops: [],              // config for the frontend, built after load
   loadedAt: null,
@@ -62,7 +66,11 @@ function load() {
   });
 
   db.stopNames.clear();
-  readCsv('stops.txt', (r) => db.stopNames.set(r.stop_id, r.stop_name));
+  db.stopZones.clear();
+  readCsv('stops.txt', (r) => {
+    db.stopNames.set(r.stop_id, r.stop_name);
+    db.stopZones.set(r.stop_id, r.zone_id);
+  });
 
   db.calendar.clear();
   readCsv('calendar.txt', (r) => {
@@ -81,6 +89,25 @@ function load() {
   readCsv('calendar_dates.txt', (r) => {
     if (!db.exceptions.has(r.date)) db.exceptions.set(r.date, new Map());
     db.exceptions.get(r.date).set(r.service_id, Number(r.exception_type));
+  });
+
+  db.amenities.clear();
+  readCsv('stop_amenities.txt', (r) => {
+    if (r.has_parking === '1') {
+      db.amenities.set(r.stop_id, { hasParking: true, free: r.is_free === '1' });
+    }
+  });
+
+  db.fares.clear();
+  readCsv('fare_attributes.txt', (r) => {
+    db.fares.set(r.fare_id, Number(r.price));
+  });
+
+  db.fareRules.clear();
+  readCsv('fare_rules.txt', (r) => {
+    const k = `${r.origin_id}|${r.destination_id}`;
+    if (!db.fareRules.has(k)) db.fareRules.set(k, []);
+    db.fareRules.get(k).push({ route: r.route_id || null, price: db.fares.get(r.fare_id) });
   });
 
   const trips = new Map();
@@ -157,6 +184,7 @@ function buildStopConfig() {
     .map(([stopId, entry]) => ({
       id: stopId,
       name: db.stopNames.get(stopId) || stopId,
+      parking: db.amenities.get(stopId) || null,
       lines: [...entry.lines].sort(),
       directions: [...entry.dirs]
         .sort(([a], [b]) => b.localeCompare(a)) // dir '1' (toward centre) first
@@ -237,6 +265,8 @@ function getConfig() {
     line_colors: Object.fromEntries([...db.routes].map(([id, r]) => [id, r.color])),
     line_names: Object.fromEntries([...db.routes].map(([id, r]) => [id, r.short])),
     feed_loaded_at: db.loadedAt,
+    feed_valid_until: feedValidUntil(),
+    holidays: getHolidayDates(),
   };
 }
 
@@ -281,6 +311,44 @@ function getDepartures(stopId, directionId, limit = 8) {
   };
 }
 
+/* Zone-based fare between two stops. Most zone-pairs have a single price;
+   a handful (the Póvoa/Vila do Conde branch) price differently depending on
+   whether the regular (B) or express (Bexp) line is used — for those we
+   return every matching price so the caller can show all options. */
+function getFare(originStopId, destStopId) {
+  const originZone = db.stopZones.get(originStopId);
+  const destZone = db.stopZones.get(destStopId);
+  if (!originZone || !destZone) return { error: 'unknown_stop' };
+
+  const rules = db.fareRules.get(`${originZone}|${destZone}`);
+  if (!rules || !rules.length) return { error: 'no_fare_rule' };
+
+  return {
+    origin_stop: originStopId,
+    destination_stop: destStopId,
+    origin_zone: originZone,
+    destination_zone: destZone,
+    fares: rules.map((r) => ({
+      route_id: r.route,
+      route_name: r.route ? db.routes.get(r.route)?.short || r.route : null,
+      price: r.price,
+    })),
+  };
+}
+
+/* Extract all dates where an exception/holiday is explicitly configured, converted to YYYY-MM-DD */
+function getHolidayDates() {
+  const dates = [];
+  for (const rawDate of db.exceptions.keys()) {
+    if (rawDate.length === 8) {
+      // Formats '20260815' into '2026-08-15'
+      const formatted = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+      dates.push(formatted);
+    }
+  }
+  return dates.sort();
+}
+
 function collect(list, days, now, ignoreWindow) {
   const out = [];
   for (const day of days) {
@@ -316,4 +384,4 @@ function secToHm(sec) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-module.exports = { load, getConfig, getDepartures };
+module.exports = { load, getConfig, getDepartures, getFare };

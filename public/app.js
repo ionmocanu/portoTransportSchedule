@@ -1,4 +1,4 @@
-import { STOPS, LINE_COLORS, HOLIDAYS, init, getDepartures } from './data.js';
+import { STOPS, LINE_COLORS, HOLIDAYS, FEED_VALID_UNTIL, init, getDepartures, getFare } from './data.js';
 
 
 const fetchDepartures = getDepartures;
@@ -16,12 +16,16 @@ const el = {
   diagram: document.getElementById('diagram'),
   board: document.getElementById('board'),
   stamp: document.getElementById('stamp'),
+  feedValidity: document.getElementById('feed-validity'),
+  fareFrom: document.getElementById('fare-from'),
+  fareTo: document.getElementById('fare-to'),
+  fareResult: document.getElementById('fare-result'),
   refresh: document.getElementById('refresh'),
   clockDisplay: document.getElementById('clock-display'),
   holidayWarning: document.getElementById('holiday-warning'),
 };
 
-const state = { stopId: null, directionId: null, payload: null, fetchedAt: null };
+const state = { stopId: null, directionId: null, payload: null, fetchedAt: null, fareFromTouched: false };
 
 const remember = {
   read() {
@@ -42,6 +46,13 @@ const remember = {
   },
 };
 
+function parkingIconHtml(stop) {
+  if (!stop.parking?.hasParking) return '';
+  const src = stop.parking.free ? './images/parking_free.svg' : './images/parking_paid.svg';
+  const alt = stop.parking.free ? 'Free parking available' : 'Paid parking available';
+  return `<img class="parking-icon" src="${src}" alt="${alt}" title="${alt}">`;
+}
+
 function selectStop(stopId, directionId) {
   const stop = STOPS[stopId];
   state.stopId = stopId;
@@ -51,10 +62,11 @@ function selectStop(stopId, directionId) {
 
   remember.write({ stopId: state.stopId, directionId: state.directionId });
   remember.pushRecent(state.stopId);
-  el.stopName.textContent = stop.name;
+  el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
   closeChooser();
   renderDiagram();
   load();
+  syncFareFrom(state.stopId);
 }
 
 function selectDirection(directionId) {
@@ -117,7 +129,7 @@ function renderStopList(query) {
       const dots = stop.lines
         .map((l) => `<span class="dot" style="--c:${LINE_COLORS[l] || ''}"></span>`)
         .join('');
-      b.innerHTML = `<span>${stop.name}</span><span class="chooser__dots">${dots}</span>`;
+      b.innerHTML = `<span class="chooser__itemname">${stop.name}${parkingIconHtml(stop)}</span><span class="chooser__dots">${dots}</span>`;
       b.addEventListener('click', () => selectStop(stop.id, state.directionId));
       li.append(b);
       return li;
@@ -270,6 +282,66 @@ function stamp() {
   }
 }
 
+const DEFAULT_FARE_TO = '5726'; // Trindade — the most central stop
+
+/* ── Fare calculator ────────────────────────────────────────────── */
+function initFareCalculator() {
+  if (!el.fareFrom || !el.fareTo) return;
+
+  const stops = Object.values(STOPS).sort((a, b) => a.name.localeCompare(b.name, 'pt'));
+  const options = stops.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  el.fareFrom.innerHTML = options;
+  el.fareTo.innerHTML = options;
+
+  el.fareFrom.value = state.stopId || stops[0]?.id;
+  el.fareTo.value = STOPS[DEFAULT_FARE_TO] && DEFAULT_FARE_TO !== el.fareFrom.value
+    ? DEFAULT_FARE_TO
+    : stops.find((s) => s.id !== el.fareFrom.value)?.id || stops[0]?.id;
+
+  el.fareFrom.addEventListener('change', () => {
+    state.fareFromTouched = true;
+    loadFare();
+  });
+  el.fareTo.addEventListener('change', loadFare);
+  loadFare();
+}
+
+/* Keeps the fare "from" in sync with the main stop selector, unless the
+   user has manually changed it — then it stops following. */
+function syncFareFrom(stopId) {
+  if (!el.fareFrom || state.fareFromTouched) return;
+  if (el.fareFrom.value === stopId) return;
+  el.fareFrom.value = stopId;
+  loadFare();
+}
+
+async function loadFare() {
+  const from = el.fareFrom.value;
+  const to = el.fareTo.value;
+  if (!from || !to) return;
+
+  try {
+    const fare = await getFare(from, to);
+    el.fareResult.innerHTML = fare.fares
+      .map((f) => `
+        <div class="fare__option">
+          <span class="fare__price">€${f.price.toFixed(2)}</span>
+          ${f.route_name ? `<span class="fare__line">via line ${f.route_name}</span>` : ''}
+        </div>`)
+      .join('');
+  } catch (err) {
+    console.error(err);
+    el.fareResult.innerHTML = `<span class="fare__error">Fare not available for this pair</span>`;
+  }
+}
+
+function renderFeedValidity() {
+  if (!FEED_VALID_UNTIL || !el.feedValidity) return;
+  const until = FEED_VALID_UNTIL;
+  const pretty = `${until.slice(6, 8)}/${until.slice(4, 6)}/${until.slice(0, 4)}`;
+  el.feedValidity.textContent = `Timetable data valid until ${pretty}`;
+}
+
 /* ── Clock & Holiday Logic ──────────────────────────────────────── */
 
 function updateClock() {
@@ -314,6 +386,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
       `<div class="board__empty"><strong>Couldn't reach the server</strong>Is server.js running?</div>`;
     return;
   }
+
+  renderFeedValidity();
+  initFareCalculator();
 
   el.stopButton.addEventListener('click', () =>
     el.stopPanel.hidden ? openChooser() : closeChooser()
