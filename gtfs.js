@@ -45,6 +45,7 @@ const db = {
   exceptions: new Map(),  // 'YYYYMMDD' → Map(service_id → 1|2)
   amenities: new Map(),   // stop_id → { hasParking, free }
   stopZones: new Map(),   // stop_id → zone_id
+  stopCoords: new Map(),  // stop_id → { lat, lon }
   fares: new Map(),       // fare_id → price (EUR)
   fareRules: new Map(),   // 'originZone|destZone' → [{ route, price }]
   departures: new Map(),  // 'stopId|dir' → [{ sec, route, headsign, service }]
@@ -68,9 +69,11 @@ function load() {
 
   db.stopNames.clear();
   db.stopZones.clear();
+  db.stopCoords.clear();
   readCsv('stops.txt', (r) => {
     db.stopNames.set(r.stop_id, r.stop_name);
     db.stopZones.set(r.stop_id, r.zone_id);
+    db.stopCoords.set(r.stop_id, { lat: Number(r.stop_lat), lon: Number(r.stop_lon) });
   });
 
   db.calendar.clear();
@@ -206,6 +209,8 @@ function buildStopConfig() {
       id: stopId,
       name: db.stopNames.get(stopId) || stopId,
       parking: db.amenities.get(stopId) || null,
+      lat: db.stopCoords.get(stopId)?.lat ?? null,
+      lon: db.stopCoords.get(stopId)?.lon ?? null,
       lines: [...entry.lines].sort(),
       directions: [...entry.dirs]
         .sort(([a], [b]) => b.localeCompare(a)) // dir '1' (toward centre) first

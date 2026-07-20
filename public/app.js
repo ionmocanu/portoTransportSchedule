@@ -15,6 +15,8 @@ const el = {
   stopSearch: document.getElementById('stop-search'),
   stopRecents: document.getElementById('stop-recents'),
   stopList: document.getElementById('stop-list'),
+  stopNear: document.getElementById('stop-near'),
+  stopNearLabel: document.querySelector('.chooser__nearlabel'),
   diagram: document.getElementById('diagram'),
   lineDots: document.getElementById('line-dots'),
   lineFilter: document.getElementById('line-filter'),
@@ -193,6 +195,63 @@ function openChooser() {
 function closeChooser() {
   el.stopPanel.hidden = true;
   el.stopButton.setAttribute('aria-expanded', 'false');
+}
+
+/* ── Use my location ───────────────────────────────────────────── */
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function nearestStop(lat, lon) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const stop of Object.values(feed.STOPS)) {
+    if (stop.lat == null || stop.lon == null) continue;
+    const dist = haversineKm(lat, lon, stop.lat, stop.lon);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = stop;
+    }
+  }
+  return best;
+}
+
+function initNearMe() {
+  if (!el.stopNear) return;
+  if (!navigator.geolocation) {
+    el.stopNear.hidden = true;
+    return;
+  }
+  el.stopNear.addEventListener('click', useMyLocation);
+}
+
+function useMyLocation() {
+  el.stopNear.disabled = true;
+  if (el.stopNearLabel) el.stopNearLabel.textContent = t('station.near.loading');
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      el.stopNear.disabled = false;
+      if (el.stopNearLabel) el.stopNearLabel.textContent = t('station.near');
+      const nearest = nearestStop(pos.coords.latitude, pos.coords.longitude);
+      if (nearest) selectStop(nearest.id);
+    },
+    (err) => {
+      console.error(err);
+      el.stopNear.disabled = false;
+      if (el.stopNearLabel) el.stopNearLabel.textContent = t('station.near.error');
+      setTimeout(() => {
+        if (el.stopNearLabel) el.stopNearLabel.textContent = t('station.near');
+      }, 3000);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
 }
 
 function renderRecents() {
@@ -640,6 +699,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
 
   renderFeedValidity();
   initTripPlanner();
+  initNearMe();
 
   el.stopButton.addEventListener('click', () =>
     el.stopPanel.hidden ? openChooser() : closeChooser()

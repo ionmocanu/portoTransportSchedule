@@ -37,6 +37,7 @@ function hmsToSec(hms) {
 const db = {
   routes: new Map(),      // route_id → { short, color }
   stopNames: new Map(),   // stop_id → name
+  stopCoords: new Map(),  // stop_id → { lat, lon }
   calendar: new Map(),    // service_id → { days:[7], start, end }
   exceptions: new Map(),  // 'YYYYMMDD' → Map(service_id → 1|2)
   departures: new Map(),  // 'stopId|headsign' → [{ sec, route, headsign, service }]
@@ -69,7 +70,11 @@ function load() {
   });
 
   db.stopNames.clear();
-  readCsv('stops.txt', (r) => db.stopNames.set(r.stop_id, r.stop_name));
+  db.stopCoords.clear();
+  readCsv('stops.txt', (r) => {
+    db.stopNames.set(r.stop_id, r.stop_name);
+    db.stopCoords.set(r.stop_id, { lat: Number(r.stop_lat), lon: Number(r.stop_lon) });
+  });
 
   db.calendar.clear();
   readCsv('calendar.txt', (r) => {
@@ -164,6 +169,8 @@ function buildStopConfig() {
     .map(([stopId, entry]) => ({
       id: stopId,
       name: db.stopNames.get(stopId) || stopId,
+      lat: db.stopCoords.get(stopId)?.lat ?? null,
+      lon: db.stopCoords.get(stopId)?.lon ?? null,
       lines: [...entry.lines].sort(),
       directions: [...entry.dirs]
         .sort(([a], [b]) => a.localeCompare(b, 'pt'))

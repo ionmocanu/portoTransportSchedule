@@ -47,6 +47,13 @@
       <div class="chooser__panel" id="stop-panel" hidden>
         <input class="chooser__search" id="stop-search" type="search" data-i18n-placeholder="station.search.placeholder"
           data-i18n-aria-label="station.search.aria" autocomplete="off" spellcheck="false">
+        <button type="button" class="chooser__near" id="stop-near">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z" />
+            <circle cx="12" cy="9" r="2.5" />
+          </svg>
+          <span class="chooser__nearlabel" data-i18n="station.near">Use my location</span>
+        </button>
         <div class="chooser__recents" id="stop-recents"></div>
         <ul class="chooser__list" id="stop-list" role="listbox" data-i18n-aria-label="station.list.aria"></ul>
       </div>

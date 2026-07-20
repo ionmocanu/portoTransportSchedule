@@ -250,6 +250,40 @@ body {
   color: var(--ink-soft);
 }
 
+.chooser__near {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px dashed var(--hairline-firm);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chooser__near:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+.chooser__near:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.chooser__near svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .chooser__recents {
   display: flex;
   flex-wrap: wrap;
