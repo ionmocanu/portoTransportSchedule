@@ -20,7 +20,8 @@
   <header class="masthead">
     <span class="masthead__mark" aria-hidden="true">M</span>
     <h1 class="masthead__title">Próximo</h1>
-    <button class="masthead__refresh" id="refresh" type="button" aria-label="Refresh now">
+    <div class="lang-switch" id="lang-switch" role="group" data-i18n-aria-label="lang.aria"></div>
+    <button class="masthead__refresh" id="refresh" type="button" data-i18n-aria-label="masthead.refresh">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" />
       </svg>
@@ -31,41 +32,47 @@
     <div class="status-bar">
       <div class="status-bar__clock" id="clock-display">—</div>
       <div class="status-bar__holiday" id="holiday-warning" hidden>
-        <strong>⚠️ Holiday Schedule Active</strong><br>
-        Please be careful: Transit services may be reduced or altered today.
+        <strong data-i18n="holiday.title"></strong>
+        <span data-i18n="holiday.body"></span>
       </div>
     </div>
     <div class="chooser">
       <button class="chooser__current" id="stop-button" type="button" aria-expanded="false" aria-controls="stop-panel">
-        <span class="chooser__eyebrow">Station</span>
+        <span class="chooser__eyebrow" data-i18n="station.label">Station</span>
         <span class="chooser__name" id="stop-name">—</span>
         <svg class="chooser__chev" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
       <div class="chooser__panel" id="stop-panel" hidden>
-        <input class="chooser__search" id="stop-search" type="search" placeholder="Search stations…" autocomplete="off"
-          spellcheck="false" aria-label="Search stations">
+        <input class="chooser__search" id="stop-search" type="search" data-i18n-placeholder="station.search.placeholder"
+          data-i18n-aria-label="station.search.aria" autocomplete="off" spellcheck="false">
         <div class="chooser__recents" id="stop-recents"></div>
-        <ul class="chooser__list" id="stop-list" role="listbox" aria-label="All stations"></ul>
+        <ul class="chooser__list" id="stop-list" role="listbox" data-i18n-aria-label="station.list.aria"></ul>
       </div>
     </div>
 
     <section class="picker" aria-labelledby="picker-heading">
-      <h2 class="picker__heading" id="picker-heading">Direction</h2>
+      <h2 class="picker__heading" id="picker-heading" data-i18n="direction.heading">Direction</h2>
       <div class="picker__diagram" id="diagram"></div>
+      <div class="line-filter" id="line-filter" hidden>
+        <span class="line-filter__label" id="line-filter-label"></span>
+        <button type="button" class="line-filter__clear" id="line-filter-clear" data-i18n="line.clear"></button>
+      </div>
     </section>
 
+    <div class="line-dots" id="line-dots" hidden></div>
+
     <section class="board" id="board" aria-live="polite" aria-busy="true">
-      <div class="board__loading">Loading times…</div>
+      <div class="board__loading" data-i18n="board.loading">Loading times…</div>
     </section>
 
     <section class="fare" aria-labelledby="fare-heading">
-      <h2 class="fare__heading" id="fare-heading">Trip fare</h2>
+      <h2 class="fare__heading" id="fare-heading" data-i18n="fare.heading">Trip fare</h2>
       <div class="fare__row">
-        <select class="fare__select" id="fare-from" aria-label="From station"></select>
+        <select class="fare__select" id="fare-from" data-i18n-aria-label="fare.from.aria"></select>
         <span class="fare__arrow" aria-hidden="true">→</span>
-        <select class="fare__select" id="fare-to" aria-label="To station"></select>
+        <select class="fare__select" id="fare-to" data-i18n-aria-label="fare.to.aria"></select>
       </div>
       <div class="fare__result" id="fare-result"></div>
     </section>

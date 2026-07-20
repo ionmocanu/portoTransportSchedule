@@ -1,4 +1,5 @@
 import { STOPS, LINE_COLORS, HOLIDAYS, FEED_VALID_UNTIL, init, getDepartures, getFare } from './data.js';
+import { initI18n, setLang, getLang, t, LANGS } from './i18n.js';
 
 
 const fetchDepartures = getDepartures;
@@ -14,18 +15,23 @@ const el = {
   stopRecents: document.getElementById('stop-recents'),
   stopList: document.getElementById('stop-list'),
   diagram: document.getElementById('diagram'),
+  lineDots: document.getElementById('line-dots'),
+  lineFilter: document.getElementById('line-filter'),
+  lineFilterLabel: document.getElementById('line-filter-label'),
+  lineFilterClear: document.getElementById('line-filter-clear'),
   board: document.getElementById('board'),
   stamp: document.getElementById('stamp'),
   feedValidity: document.getElementById('feed-validity'),
   fareFrom: document.getElementById('fare-from'),
   fareTo: document.getElementById('fare-to'),
   fareResult: document.getElementById('fare-result'),
+  langSwitch: document.getElementById('lang-switch'),
   refresh: document.getElementById('refresh'),
   clockDisplay: document.getElementById('clock-display'),
   holidayWarning: document.getElementById('holiday-warning'),
 };
 
-const state = { stopId: null, directionId: null, payload: null, fetchedAt: null, fareFromTouched: false };
+const state = { stopId: null, directionId: null, lineFilter: null, payload: null, fetchedAt: null, fareFromTouched: false };
 
 const remember = {
   read() {
@@ -49,7 +55,7 @@ const remember = {
 function parkingIconHtml(stop) {
   if (!stop.parking?.hasParking) return '';
   const src = stop.parking.free ? './images/parking_free.svg' : './images/parking_paid.svg';
-  const alt = stop.parking.free ? 'Free parking available' : 'Paid parking available';
+  const alt = t(stop.parking.free ? 'parking.free' : 'parking.paid');
   return `<img class="parking-icon" src="${src}" alt="${alt}" title="${alt}">`;
 }
 
@@ -59,21 +65,97 @@ function selectStop(stopId, directionId) {
   state.directionId = stop.directions.some((d) => d.id === directionId)
     ? directionId
     : stop.directions[0].id;
+  state.lineFilter = null;
 
   remember.write({ stopId: state.stopId, directionId: state.directionId });
   remember.pushRecent(state.stopId);
   el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
   closeChooser();
   renderDiagram();
+  renderLineControls();
   load();
   syncFareFrom(state.stopId);
 }
 
 function selectDirection(directionId) {
+  if (directionId !== state.directionId) state.lineFilter = null;
   state.directionId = directionId;
   remember.write({ directionId });
   renderDiagram();
+  renderLineControls();
   load();
+}
+
+function selectLine(routeId, directionId) {
+  const directionChanged = directionId !== state.directionId;
+  state.directionId = directionId;
+  state.lineFilter = routeId;
+  remember.write({ directionId });
+  renderDiagram();
+  renderLineControls();
+  if (directionChanged) load();
+  else renderBoard();
+}
+
+function clearLineFilter() {
+  state.lineFilter = null;
+  renderDiagram();
+  renderLineControls();
+  renderBoard();
+}
+
+function renderLineFilter() {
+  if (!el.lineFilter) return;
+  if (!state.lineFilter) {
+    el.lineFilter.hidden = true;
+    return;
+  }
+  const stop = STOPS[state.stopId];
+  const direction = stop.directions.find((d) => d.id === state.directionId);
+  const line = direction?.lines.find((l) => l.route === state.lineFilter);
+  el.lineFilterLabel.innerHTML = line
+    ? `<span class="dirpill__badge" style="background:${line.color}">${line.short}</span>`
+    : '';
+  el.lineFilter.hidden = false;
+}
+
+function renderLineControls() {
+  renderLineFilter();
+  renderLineDots();
+}
+
+/* Big, thumb-friendly line-color dots above the board — the easy tap
+   target for filtering on a phone (the pills inside the direction card
+   are small). Shown only when the current direction has more than one line. */
+function renderLineDots() {
+  if (!el.lineDots) return;
+  const stop = STOPS[state.stopId];
+  const direction = stop?.directions.find((d) => d.id === state.directionId);
+  const lines = direction?.lines || [];
+
+  if (lines.length < 2) {
+    el.lineDots.hidden = true;
+    el.lineDots.replaceChildren();
+    return;
+  }
+
+  el.lineDots.replaceChildren(
+    ...lines.map((l) => {
+      const isActive = l.route === state.lineFilter;
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'linedot' + (isActive ? ' linedot--active' : '');
+      dot.style.setProperty('--c', l.color);
+      dot.textContent = l.short;
+      dot.setAttribute('aria-pressed', String(isActive));
+      dot.setAttribute('aria-label', t('line.filterAria', { line: l.short, headsign: l.headsign }));
+      dot.addEventListener('click', () => {
+        isActive ? clearLineFilter() : selectLine(l.route, direction.id);
+      });
+      return dot;
+    })
+  );
+  el.lineDots.hidden = false;
 }
 
 /* ── Stop chooser ───────────────────────────────────────────────── */
@@ -114,7 +196,7 @@ function renderStopList(query) {
   const matches = Object.values(STOPS).filter((s) => !q || fold(s.name).includes(q));
 
   if (!matches.length) {
-    el.stopList.innerHTML = `<li class="chooser__none">No stop matches “${query}”</li>`;
+    el.stopList.innerHTML = `<li class="chooser__none">${t('station.none', { query })}</li>`;
     return;
   }
 
@@ -154,30 +236,42 @@ function dirCard(direction, total) {
   card.type = 'button';
   card.className = 'dircard' + (active ? ' dircard--active' : '');
   card.setAttribute('aria-pressed', String(active));
-  card.setAttribute('aria-label', `Direction towards ${direction.label}`);
+  card.setAttribute('aria-label', t('direction.aria', { label: direction.label }));
   if (total === 1) card.classList.add('dircard--full');
 
   const arrow = isLeft
     ? `<svg class="dircard__arrow" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>`
     : `<svg class="dircard__arrow" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>`;
 
-  // Line pills: each line + its destination
-  const pills = (direction.lines || []).map((l) =>
-    `<span class="dirpill">
-      <span class="dirpill__badge" style="background:${l.color}">${l.short}</span>
-      <span class="dirpill__dest">${l.headsign}</span>
-    </span>`
-  ).join('');
-
   card.innerHTML = `
     <div class="dircard__top">
       ${arrow}
       <span class="dircard__label">${direction.label}</span>
     </div>
-    <div class="dircard__lines">${pills}</div>`;
+    <div class="dircard__lines"></div>`;
+
+  const linesEl = card.querySelector('.dircard__lines');
+  linesEl.append(...(direction.lines || []).map((l) => linePill(l, direction.id)));
 
   card.addEventListener('click', () => selectDirection(direction.id));
   return card;
+}
+
+function linePill(l, directionId) {
+  const isActive = l.route === state.lineFilter && directionId === state.directionId;
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'dirpill' + (isActive ? ' dirpill--active' : '');
+  pill.setAttribute('aria-pressed', String(isActive));
+  pill.setAttribute('aria-label', t('line.filterAria', { line: l.short, headsign: l.headsign }));
+  pill.innerHTML = `
+    <span class="dirpill__badge" style="background:${l.color}">${l.short}</span>
+    <span class="dirpill__dest">${l.headsign}</span>`;
+  pill.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isActive ? clearLineFilter() : selectLine(l.route, directionId);
+  });
+  return pill;
 }
 
 /* ── Board ──────────────────────────────────────────────────────── */
@@ -186,17 +280,23 @@ function renderBoard() {
   if (!payload) return;
 
   const live = payload.departures
+    .filter((d) => !state.lineFilter || d.route_id === state.lineFilter)
     .map((d) => ({ ...d, seconds_left: secondsLeft(d) }))
     .filter((d) => d.seconds_left > -30);
 
   if (!live.length) {
     el.board.innerHTML =
-      `<div class="board__empty"><strong>No metros right now</strong>Service runs about 06:00–01:00.</div>`;
+      `<div class="board__empty"><strong>${t('board.empty.title')}</strong>${t('board.empty.body')}</div>`;
     return;
   }
 
+  const maxTotal = state.lineFilter ? 5 : 6;
   const [first, ...rest] = live;
-  el.board.replaceChildren(nextCard(first), ...rest.slice(0, 5).map(row));
+  el.board.replaceChildren(nextCard(first), ...rest.slice(0, maxTotal - 1).map(row));
+}
+
+function lastTagHtml(d) {
+  return d.is_last ? `<span class="last-tag">${t('board.last')}</span>` : '';
 }
 
 function nextCard(d) {
@@ -207,12 +307,12 @@ function nextCard(d) {
   div.innerHTML = `
     <span class="badge badge--lg">${d.line}</span>
     <div>
-      <div class="next__headsign">${d.headsign}</div>
+      <div class="next__headsign">${d.headsign}${lastTagHtml(d)}</div>
       <div class="next__time">${d.departure_time}</div>
     </div>
     ${mins < 1
-      ? `<div class="next__due">Due</div>`
-      : `<div class="next__count"><span class="next__min">${mins}</span><span class="next__unit">min</span></div>`
+      ? `<div class="next__due">${t('board.due')}</div>`
+      : `<div class="next__count"><span class="next__min">${mins}</span><span class="next__unit">${t('board.min')}</span></div>`
     }`;
   return div;
 }
@@ -224,10 +324,10 @@ function row(d) {
   div.innerHTML = `
     <span class="badge" style="--line:${LINE_COLORS[d.route_id] || 'var(--ink)'}">${d.line}</span>
     <div>
-      <div class="row__headsign">${d.headsign}</div>
+      <div class="row__headsign">${d.headsign}${lastTagHtml(d)}</div>
       <div class="row__time">${d.departure_time}</div>
     </div>
-    <div class="row__count">${mins}<span>min</span></div>`;
+    <div class="row__count">${mins}<span>${t('board.min')}</span></div>`;
   return div;
 }
 
@@ -255,7 +355,7 @@ async function load() {
   } catch (err) {
     console.error(err);
     el.board.innerHTML =
-      `<div class="board__empty"><strong>Couldn't load times</strong>Check the connection and try refresh.</div>`;
+      `<div class="board__empty"><strong>${t('board.error.title')}</strong>${t('board.error.body')}</div>`;
   } finally {
     if (token === inflight) {
       document.body.dataset.loading = 'false';
@@ -268,16 +368,16 @@ async function load() {
 function stamp() {
   if (!state.fetchedAt) return;
   const age = Math.round((Date.now() - state.fetchedAt) / 1000);
-  const when = age < 10 ? 'just now' : `${age}s ago`;
+  const when = age < 10 ? t('stamp.justNow') : t('stamp.secondsAgo', { age });
   if (state.payload?.stale) {
     const until = state.payload.feed_valid_until;
     const pretty = until
       ? `${until.slice(6, 8)}/${until.slice(4, 6)}/${until.slice(0, 4)}`
       : '';
-    el.stamp.textContent = `⚠ Timetable expired ${pretty} — showing last known schedule`;
+    el.stamp.textContent = t('stamp.stale', { date: pretty });
     el.stamp.dataset.stale = 'true';
   } else {
-    el.stamp.textContent = `Timetable · updated ${when}`;
+    el.stamp.textContent = t('stamp.updated', { when });
     el.stamp.dataset.stale = 'false';
   }
 }
@@ -326,12 +426,12 @@ async function loadFare() {
       .map((f) => `
         <div class="fare__option">
           <span class="fare__price">€${f.price.toFixed(2)}</span>
-          ${f.route_name ? `<span class="fare__line">via line ${f.route_name}</span>` : ''}
+          ${f.route_name ? `<span class="fare__line">${t('fare.via', { line: f.route_name })}</span>` : ''}
         </div>`)
       .join('');
   } catch (err) {
     console.error(err);
-    el.fareResult.innerHTML = `<span class="fare__error">Fare not available for this pair</span>`;
+    el.fareResult.innerHTML = `<span class="fare__error">${t('fare.error')}</span>`;
   }
 }
 
@@ -339,7 +439,7 @@ function renderFeedValidity() {
   if (!FEED_VALID_UNTIL || !el.feedValidity) return;
   const until = FEED_VALID_UNTIL;
   const pretty = `${until.slice(6, 8)}/${until.slice(4, 6)}/${until.slice(0, 4)}`;
-  el.feedValidity.textContent = `Timetable data valid until ${pretty}`;
+  el.feedValidity.textContent = t('feed.validUntil', { date: pretty });
 }
 
 /* ── Clock & Holiday Logic ──────────────────────────────────────── */
@@ -347,9 +447,10 @@ function renderFeedValidity() {
 function updateClock() {
   const now = new Date();
 
+  const locale = getLang() === 'pt' ? 'pt-PT' : 'en-US';
   const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-  const dateString = now.toLocaleDateString('en-US', dateOptions);
-  const timeString = now.toLocaleTimeString('en-US');
+  const dateString = now.toLocaleDateString(locale, dateOptions);
+  const timeString = now.toLocaleTimeString(locale);
 
   el.clockDisplay.textContent = `${dateString} • ${timeString}`;
 
@@ -366,8 +467,51 @@ function updateClock() {
   }
 }
 
+/* ── Language switcher ─────────────────────────────────────────── */
+function renderLangSwitch() {
+  if (!el.langSwitch) return;
+  el.langSwitch.replaceChildren(
+    ...LANGS.map(({ code, label }) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lang-switch__btn';
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(code === getLang()));
+      b.addEventListener('click', () => switchLang(code));
+      return b;
+    })
+  );
+}
+
+async function switchLang(code) {
+  if (code === getLang()) return;
+  await setLang(code);
+  renderLangSwitch();
+  refreshUI();
+}
+
+/* Re-render everything that has translated text baked into it. */
+function refreshUI() {
+  updateClock();
+  if (state.stopId) {
+    const stop = STOPS[state.stopId];
+    el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
+    renderDiagram();
+  }
+  if (!el.stopPanel.hidden) {
+    renderStopList(el.stopSearch.value);
+    renderRecents();
+  }
+  renderLineControls();
+  renderBoard();
+  stamp();
+  renderFeedValidity();
+  if (el.fareFrom.value && el.fareTo.value) loadFare();
+}
+
 /* ── Boot ───────────────────────────────────────────────────────── */
 el.refresh.addEventListener('click', load);
+el.lineFilterClear?.addEventListener('click', clearLineFilter);
 
 // Start the clock and update it every 1 second (1000ms)
 updateClock();
@@ -378,12 +522,15 @@ setInterval(load, REFETCH_MS);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
 (async () => {
+  await initI18n();
+  renderLangSwitch();
+
   try {
     await init();
   } catch (err) {
     console.error(err);
     el.board.innerHTML =
-      `<div class="board__empty"><strong>Couldn't reach the server</strong>Is server.js running?</div>`;
+      `<div class="board__empty"><strong>${t('boot.error.title')}</strong>${t('boot.error.body')}</div>`;
     return;
   }
 

@@ -270,7 +270,7 @@ function getConfig() {
   };
 }
 
-function getDepartures(stopId, directionId, limit = 8) {
+function getDepartures(stopId, directionId, limit = 60) {
   const stop = db.stops.find((s) => s.id === stopId);
   if (!stop) return { error: 'unknown_stop' };
   const direction = stop.directions.find((d) => d.id === directionId);
@@ -350,21 +350,42 @@ function getHolidayDates() {
 }
 
 function collect(list, days, now, ignoreWindow) {
-  const out = [];
-  for (const day of days) {
+  const activeByDay = days.map((day) => {
     const active = new Set(
-      [...db.calendar.keys()].filter((s) =>
-        serviceRunsOn(s, day.ymd, day.weekday, ignoreWindow)
-      )
+      [...db.calendar.keys()].filter((s) => serviceRunsOn(s, day.ymd, day.weekday, ignoreWindow))
     );
     for (const [sid, type] of db.exceptions.get(day.ymd) || []) {
       if (type === 1) active.add(sid);
     }
-    if (!active.size) continue;
+    return active;
+  });
+
+  // A recurring service is active on both "yesterday" and "today", so the
+  // same time-of-day trip template genuinely occurs once as yesterday's
+  // service winding down (near future) and again ~24h later as today's own
+  // service closing out (far future) — two real, different occurrences, not
+  // a duplicate. So "last of day" must be tracked per day-frame separately;
+  // merging them would compare tonight's closing train against tomorrow's.
+  const lastForRoute = days.map((day, i) => {
+    const active = activeByDay[i];
+    const last = new Map();
+    if (!active.size) return last;
+    for (const d of list) {
+      if (!active.has(d.service)) continue;
+      const absSec = d.sec + day.offset;
+      if (!last.has(d.route) || absSec > last.get(d.route)) last.set(d.route, absSec);
+    }
+    return last;
+  });
+
+  const out = [];
+  days.forEach((day, i) => {
+    const active = activeByDay[i];
+    if (!active.size) return;
 
     for (const d of list) {
       const untilSec = d.sec + day.offset - now.sec;
-      if (untilSec < 0 || untilSec > 2 * 3600) continue;
+      if (untilSec < 0 || untilSec > 3 * 3600) continue;
       if (!active.has(d.service)) continue;
       out.push({
         line: db.routes.get(d.route)?.short || d.route,
@@ -373,9 +394,10 @@ function collect(list, days, now, ignoreWindow) {
         departure_time: secToHm(d.sec),
         seconds_until: untilSec,
         realtime: false,
+        is_last: d.sec + day.offset === lastForRoute[i].get(d.route),
       });
     }
-  }
+  });
   return out;
 }
 
