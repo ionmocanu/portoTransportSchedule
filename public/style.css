@@ -109,6 +109,44 @@ body {
   }
 }
 
+/* ── Status Bar & Clock ─────────────────────────────────────────── */
+.status-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.status-bar__clock {
+  text-align: center;
+  font-family: var(--body);
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--glaze);
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+}
+
+.status-bar__holiday {
+  background: #ffeeba; /* High-contrast warning yellow */
+  color: #856404;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid #ffeeba;
+  font-family: var(--body);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.status-bar__holiday strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+
 /* ── Stop chooser ───────────────────────────────────────────────── */
 .chooser {
   position: relative;

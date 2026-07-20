@@ -5,6 +5,7 @@
 
 export let STOPS = {};
 export let LINE_COLORS = {};
+export let HOLIDAYS = [];
 
 export async function init() {
   const res = await fetch('/api/config');
@@ -13,6 +14,7 @@ export async function init() {
 
   LINE_COLORS = cfg.line_colors;
   window.DEFAULT_STOP = cfg.default_stop;
+  HOLIDAYS = cfg.holidays || [];
   STOPS = Object.fromEntries(
     cfg.stops.map((s) => [
       s.id,

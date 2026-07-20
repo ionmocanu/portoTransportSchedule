@@ -27,7 +27,7 @@ stop_id,stop_code,stop_name,stop_desc,stop_lat,stop_lon,zone_id,stop_url
 5722,,Rio Tinto,,41.17942,-8.560264,MAI4,
 5723,,Senhor de Matosinhos,,41.18821,-8.685123,MTS1,
 5724,,Senhora da Hora,,41.1881,-8.654466,PRT2,
-5725,,NorteShopping I Sete Bicas,,41.18242,-8.652149,PRT2,
+5725,,NorteShoping I Sete Bicas,,41.18242,-8.652149,PRT2,
 5726,,Trindade,,41.15228,-8.609299,PRT1,
 5727,,Vasco da Gama,,41.19024,-8.661037,MTS1,
 5728,,Venda Nova,,41.17516,-8.541962,GDM1,

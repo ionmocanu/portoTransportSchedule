@@ -1,4 +1,5 @@
-import { STOPS, LINE_COLORS, init, getDepartures } from './data.js';
+import { STOPS, LINE_COLORS, HOLIDAYS, init, getDepartures } from './data.js';
+
 
 const fetchDepartures = getDepartures;
 
@@ -16,6 +17,8 @@ const el = {
   board: document.getElementById('board'),
   stamp: document.getElementById('stamp'),
   refresh: document.getElementById('refresh'),
+  clockDisplay: document.getElementById('clock-display'),
+  holidayWarning: document.getElementById('holiday-warning'),
 };
 
 const state = { stopId: null, directionId: null, payload: null, fetchedAt: null };
@@ -195,10 +198,9 @@ function nextCard(d) {
       <div class="next__headsign">${d.headsign}</div>
       <div class="next__time">${d.departure_time}</div>
     </div>
-    ${
-      mins < 1
-        ? `<div class="next__due">Due</div>`
-        : `<div class="next__count"><span class="next__min">${mins}</span><span class="next__unit">min</span></div>`
+    ${mins < 1
+      ? `<div class="next__due">Due</div>`
+      : `<div class="next__count"><span class="next__min">${mins}</span><span class="next__unit">min</span></div>`
     }`;
   return div;
 }
@@ -268,8 +270,36 @@ function stamp() {
   }
 }
 
+/* ── Clock & Holiday Logic ──────────────────────────────────────── */
+
+function updateClock() {
+  const now = new Date();
+
+  const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const dateString = now.toLocaleDateString('en-US', dateOptions);
+  const timeString = now.toLocaleTimeString('en-US');
+
+  el.clockDisplay.textContent = `${dateString} • ${timeString}`;
+
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const todayKey = `${yyyy}-${mm}-${dd}`;
+
+  // This now checks against the dynamically loaded GTFS data!
+  if (HOLIDAYS.includes(todayKey)) {
+    el.holidayWarning.hidden = false;
+  } else {
+    el.holidayWarning.hidden = true;
+  }
+}
+
 /* ── Boot ───────────────────────────────────────────────────────── */
 el.refresh.addEventListener('click', load);
+
+// Start the clock and update it every 1 second (1000ms)
+updateClock();
+setInterval(updateClock, 1000);
 
 setInterval(() => { renderBoard(); stamp(); }, TICK_MS);
 setInterval(load, REFETCH_MS);
