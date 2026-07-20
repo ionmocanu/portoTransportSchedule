@@ -173,13 +173,21 @@ function buildStopConfig() {
 
 /* ── Service calendar ───────────────────────────────────────────── */
 
-function serviceRunsOn(serviceId, ymd, weekday) {
+function serviceRunsOn(serviceId, ymd, weekday, ignoreWindow = false) {
   const ex = db.exceptions.get(ymd)?.get(serviceId);
   if (ex === 1) return true;
   if (ex === 2) return false;
   const cal = db.calendar.get(serviceId);
   if (!cal) return false;
+  if (ignoreWindow) return cal.days[weekday]; // grace mode: right weekday, ignore expired date range
   return cal.days[weekday] && ymd >= cal.start && ymd <= cal.end;
+}
+
+/* Latest end_date across all services — the day the feed stops being valid. */
+function feedValidUntil() {
+  let max = '';
+  for (const cal of db.calendar.values()) if (cal.end > max) max = cal.end;
+  return max;
 }
 
 function lisbonNow() {
@@ -228,7 +236,6 @@ function getDepartures(stopId, directionId, limit = 8) {
 
   const list = db.departures.get(key(stopId, directionId)) || [];
   const now = lisbonNow();
-  const results = [];
 
   // Yesterday's service day spills past midnight (GTFS times ≥ 24:00).
   const days = [
@@ -236,28 +243,15 @@ function getDepartures(stopId, directionId, limit = 8) {
     { ymd: now.ymd, weekday: now.weekday, offset: 0 },
   ];
 
-  for (const day of days) {
-    const active = new Set(
-      [...db.calendar.keys()].filter((s) => serviceRunsOn(s, day.ymd, day.weekday))
-    );
-    for (const [sid, type] of db.exceptions.get(day.ymd) || []) {
-      if (type === 1) active.add(sid);
-    }
-    if (!active.size) continue;
-
-    for (const d of list) {
-      const untilSec = d.sec + day.offset - now.sec;
-      if (untilSec < 0 || untilSec > 2 * 3600) continue;
-      if (!active.has(d.service)) continue;
-      results.push({
-        line: db.routes.get(d.route)?.short || d.route,
-        route_id: d.route,
-        headsign: d.headsign,
-        departure_time: secToHm(d.sec),
-        seconds_until: untilSec,
-        realtime: false,
-      });
-    }
+  // First try a strict match. If the feed has expired (nothing active on any
+  // day), retry in grace mode: same weekday pattern, ignore the stale date
+  // window. A metro timetable rarely changes between exports, so yesterday's
+  // schedule is a far better answer than an empty board.
+  let results = collect(list, days, now, false);
+  let stale = false;
+  if (!results.length && now.ymd > feedValidUntil()) {
+    results = collect(list, days, now, true);
+    stale = results.length > 0;
   }
 
   results.sort((a, b) => a.seconds_until - b.seconds_until);
@@ -269,8 +263,40 @@ function getDepartures(stopId, directionId, limit = 8) {
     direction_label: direction.label,
     generated_at: new Date().toISOString(),
     realtime: false,
+    stale,                          // true → timetable is past its validity date
+    feed_valid_until: feedValidUntil(),
     departures: results.slice(0, limit),
   };
+}
+
+function collect(list, days, now, ignoreWindow) {
+  const out = [];
+  for (const day of days) {
+    const active = new Set(
+      [...db.calendar.keys()].filter((s) =>
+        serviceRunsOn(s, day.ymd, day.weekday, ignoreWindow)
+      )
+    );
+    for (const [sid, type] of db.exceptions.get(day.ymd) || []) {
+      if (type === 1) active.add(sid);
+    }
+    if (!active.size) continue;
+
+    for (const d of list) {
+      const untilSec = d.sec + day.offset - now.sec;
+      if (untilSec < 0 || untilSec > 2 * 3600) continue;
+      if (!active.has(d.service)) continue;
+      out.push({
+        line: db.routes.get(d.route)?.short || d.route,
+        route_id: d.route,
+        headsign: d.headsign,
+        departure_time: secToHm(d.sec),
+        seconds_until: untilSec,
+        realtime: false,
+      });
+    }
+  }
+  return out;
 }
 
 function secToHm(sec) {
