@@ -122,46 +122,47 @@ function renderStopList(query) {
   );
 }
 
-/* ── Direction diagram ──────────────────────────────────────────── */
+/* ── Direction picker ───────────────────────────────────────────── */
 function renderDiagram() {
   const stop = STOPS[state.stopId];
-  const [left, right] = stop.directions;
 
-  const track = document.createElement('div');
-  track.className = 'track';
-  for (const line of stop.lines) {
-    const s = document.createElement('div');
-    s.className = 'track__strand';
-    s.style.background = LINE_COLORS[line] || 'var(--hairline-firm)';
-    track.append(s);
-  }
-
-  const here = document.createElement('div');
-  here.className = 'here';
-  here.innerHTML = `<div class="here__dot"></div><div class="here__label">${stop.name}</div>`;
-
-  const ends = right
-    ? [end(left, 'left'), here, end(right, 'right')]
-    : [document.createElement('span'), here, end(left, 'right')];
-  el.diagram.replaceChildren(track, ...ends);
+  el.diagram.replaceChildren(
+    ...stop.directions.map((dir) => dirCard(dir, stop.directions.length))
+  );
 }
 
-function end(direction, side) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = `end end--${side}`;
-  b.setAttribute('aria-pressed', String(direction.id === state.directionId));
-  b.setAttribute('aria-label', `Show metros towards ${direction.label}`);
-  b.innerHTML = `
-    <span class="end__cap">
-      <svg class="end__arrow" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 12h13M12 5l7 7-7 7"/>
-      </svg>
-    </span>
-    <span class="end__label">${direction.label}</span>
-    ${direction.note ? `<span class="end__note">${direction.note}</span>` : ''}`;
-  b.addEventListener('click', () => selectDirection(direction.id));
-  return b;
+function dirCard(direction, total) {
+  const isLeft = direction.id === '1'; // toward city = left arrow
+  const active = direction.id === state.directionId;
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'dircard' + (active ? ' dircard--active' : '');
+  card.setAttribute('aria-pressed', String(active));
+  card.setAttribute('aria-label', `Direction towards ${direction.label}`);
+  if (total === 1) card.classList.add('dircard--full');
+
+  const arrow = isLeft
+    ? `<svg class="dircard__arrow" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>`
+    : `<svg class="dircard__arrow" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>`;
+
+  // Line pills: each line + its destination
+  const pills = (direction.lines || []).map((l) =>
+    `<span class="dirpill">
+      <span class="dirpill__badge" style="background:${l.color}">${l.short}</span>
+      <span class="dirpill__dest">${l.headsign}</span>
+    </span>`
+  ).join('');
+
+  card.innerHTML = `
+    <div class="dircard__top">
+      ${arrow}
+      <span class="dircard__label">${direction.label}</span>
+    </div>
+    <div class="dircard__lines">${pills}</div>`;
+
+  card.addEventListener('click', () => selectDirection(direction.id));
+  return card;
 }
 
 /* ── Board ──────────────────────────────────────────────────────── */

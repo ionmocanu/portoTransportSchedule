@@ -135,19 +135,21 @@ function load() {
   );
 }
 
-/* Derive per-stop directions: label = most frequent headsign seen there,
-   note = how many other destinations share that platform. */
+/* Derive per-stop directions with full per-line destination breakdown. */
 function buildStopConfig() {
-  const perStop = new Map(); // stop_id → { dirs: Map(dir → Map(headsign→n)), lines:Set }
+  // stop_id → { dirs: Map(dir → { counts: Map(headsign→n), byLine: Map(route→Set(headsign)) }), lines: Set }
+  const perStop = new Map();
   for (const [k, list] of db.departures) {
     const [stopId, dir] = k.split('|');
     if (!perStop.has(stopId)) perStop.set(stopId, { dirs: new Map(), lines: new Set() });
     const entry = perStop.get(stopId);
-    if (!entry.dirs.has(dir)) entry.dirs.set(dir, new Map());
-    const counts = entry.dirs.get(dir);
-    for (const d of list) {
-      counts.set(d.headsign, (counts.get(d.headsign) || 0) + 1);
-      entry.lines.add(d.route);
+    if (!entry.dirs.has(dir)) entry.dirs.set(dir, { counts: new Map(), byLine: new Map() });
+    const d = entry.dirs.get(dir);
+    for (const dep of list) {
+      d.counts.set(dep.headsign, (d.counts.get(dep.headsign) || 0) + 1);
+      entry.lines.add(dep.route);
+      if (!d.byLine.has(dep.route)) d.byLine.set(dep.route, new Set());
+      d.byLine.get(dep.route).add(dep.headsign);
     }
   }
 
@@ -157,14 +159,24 @@ function buildStopConfig() {
       name: db.stopNames.get(stopId) || stopId,
       lines: [...entry.lines].sort(),
       directions: [...entry.dirs]
-        .sort(([a], [b]) => b.localeCompare(a)) // '1' (centre) first, like before
-        .map(([dir, counts]) => {
+        .sort(([a], [b]) => b.localeCompare(a)) // dir '1' (toward centre) first
+        .map(([dir, { counts, byLine }]) => {
           const ranked = [...counts].sort((a, b) => b[1] - a[1]);
-          const others = ranked.length - 1;
+          // Per-line: sort lines, pick the most common headsign per line
+          const lines = [...byLine]
+            .sort(([a], [b]) => a.localeCompare(b, 'pt'))
+            .map(([route, headsigns]) => {
+              const r = db.routes.get(route);
+              // pick the most frequent headsign for this line at this stop
+              const hs = [...headsigns].sort((a, b) =>
+                (counts.get(b) || 0) - (counts.get(a) || 0)
+              )[0];
+              return { route, short: r?.short || route, color: r?.color || '#16305C', headsign: hs };
+            });
           return {
             id: dir,
-            label: ranked[0][0],
-            note: others > 0 ? `+${others} more` : '',
+            label: ranked[0][0],   // most common overall headsign
+            lines,                  // [{route, short, color, headsign}]
           };
         }),
     }))
