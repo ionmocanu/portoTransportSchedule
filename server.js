@@ -14,10 +14,16 @@ gtfsCp.load();
 
 async function checkFeed() {
   try {
-    const changed = await updater.checkAndUpdate();
+    const changed = await updater.metro.checkAndUpdate();
     if (changed) gtfs.load();
   } catch (err) {
     console.error('GTFS update check failed (keeping current feed):', err.message);
+  }
+  try {
+    const changed = await updater.cp.checkAndUpdate();
+    if (changed) gtfsCp.load();
+  } catch (err) {
+    console.error('CP GTFS update check failed (keeping current feed):', err.message);
   }
 }
 checkFeed();
@@ -38,7 +44,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (url.pathname === '/api/config')  return json(res, 200, gtfs.getConfig());
-  if (url.pathname === '/api/status')  return json(res, 200, updater.readState());
+  if (url.pathname === '/api/status')  return json(res, 200, { metro: updater.metro.readState(), cp: updater.cp.readState() });
   if (url.pathname === '/api/departures') {
     const payload = gtfs.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
     return json(res, payload.error ? 400 : 200, payload);
