@@ -22,7 +22,7 @@ export async function init() {
   STOPS = Object.fromEntries(
     cfg.stops.map((s) => [
       s.id,
-      { id: s.id, name: s.name, directions: s.directions, lines: s.lines, lat: s.lat, lon: s.lon },
+      { id: s.id, name: s.name, directions: s.directions, lines: s.lines, lat: s.lat, lon: s.lon, connections: s.connections || [] },
     ])
   );
 }

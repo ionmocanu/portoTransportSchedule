@@ -378,9 +378,12 @@ li:last-child .chooser__item {
   content: " →"; /* You can also use the unicode " \2192" */
 }
 
+/* minmax(0,…) + min-width:0 down the chain let the cards actually shrink on
+   narrow phones — with plain 1fr the nowrap pill text sets a minimum width
+   and the whole page ends up wider than the screen (zoomed out). */
 .picker__diagram {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -390,6 +393,7 @@ li:last-child .chooser__item {
 }
 
 .dircard {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -431,6 +435,9 @@ li:last-child .chooser__item {
 }
 
 .dircard__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  hyphens: auto;
   font-family: var(--display);
   font-size: 16px;
   font-weight: 700;
@@ -438,6 +445,13 @@ li:last-child .chooser__item {
   color: var(--ink);
   line-height: 1.2;
   transition: color 160ms;
+}
+/* Ultra-narrow phones: the two-up cards leave ~65px for the label text,
+   so drop a size instead of shattering words like "Estádio" mid-letter. */
+@media (max-width: 374px) {
+  .dircard__label {
+    font-size: 14px;
+  }
 }
 .dircard--active .dircard__label {
   color: var(--glaze);
@@ -490,6 +504,8 @@ li:last-child .chooser__item {
 }
 
 .dirpill__dest {
+  flex: 1;
+  min-width: 0;
   font-family: var(--body);
   font-size: 12px;
   color: var(--ink-soft);
@@ -682,6 +698,14 @@ li:last-child .chooser__item {
   font-variation-settings: "wdth" 112;
   color: var(--line, var(--ink));
 }
+.next__due--departed {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.next--departed,
+.row--departed {
+  opacity: 0.55;
+}
 
 /* the rest */
 .row {
@@ -709,6 +733,20 @@ li:last-child .chooser__item {
   border-radius: 999px;
   background: #c0392b;
   color: #fff;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+.term-tag {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--porcelain, #eee);
+  color: var(--ink-soft, #555);
+  border: 1px solid var(--hairline, #ccc);
   font-family: var(--display);
   font-size: 10px;
   font-weight: 700;
@@ -802,21 +840,26 @@ body {
     background 140ms,
     color 140ms;
 }
-.tab__icon svg {
-  width: 24px;
-  height: 24px;
-  fill: currentColor;
+/* Operator logos keep their brand colors, so tabs mute inactive ones with
+   opacity instead of recoloring, and the active pill stays light — the
+   logos wouldn't survive on a dark background. */
+.tab__img {
+  height: 26px;
+  width: auto;
+  max-width: 72px;
   display: block;
-}
-.tab__label {
-  font-family: var(--display);
-  font-size: 12px;
-  font-weight: 600;
-  font-variation-settings: "wdth" 105;
+  object-fit: contain;
+  opacity: 0.45;
+  filter: grayscale(1);
+  transition: opacity 140ms, filter 140ms;
 }
 .tab[aria-selected="true"] {
-  background: var(--ink);
-  color: var(--glaze);
+  background: var(--porcelain);
+  box-shadow: inset 0 0 0 1px var(--hairline-firm);
+}
+.tab[aria-selected="true"] .tab__img {
+  opacity: 1;
+  filter: none;
 }
 
 /* ── Find-mode switch ───────────────────────────────────────────── */
@@ -923,6 +966,24 @@ body {
 .chooser__name .parking-icon {
   width: 16px;
   height: 16px;
+  vertical-align: -3px;
+}
+
+/* Interchange icons — other operators reachable on foot from this stop.
+   Operator logos with intrinsic colors; height-capped, width follows the
+   logo's aspect ratio (the STCP wordmark is wide). */
+.conn-icon {
+  height: 14px;
+  width: auto;
+  max-width: 40px;
+  object-fit: contain;
+  margin-left: 6px;
+  vertical-align: -2px;
+  flex: none;
+}
+.chooser__name .conn-icon {
+  height: 16px;
+  max-width: 46px;
   vertical-align: -3px;
 }
 
@@ -1098,6 +1159,18 @@ body {
   color: var(--ink);
 }
 .planner__fareline {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.planner__fareticket {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.planner__zones {
+  flex-basis: 100%;
   font-size: 12px;
   color: var(--ink-soft);
 }

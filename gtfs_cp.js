@@ -318,7 +318,9 @@ function collect(list, days, now, ignoreWindow) {
 
     for (const d of list) {
       const untilSec = d.sec + day.offset - now.sec;
-      if (untilSec < 0 || untilSec > 3 * 3600) continue;
+      // keep recently-departed rows (down to -150s) so the board can show
+      // "departed X min ago" even right after a refetch
+      if (untilSec < -150 || untilSec > 3 * 3600) continue;
       if (!active.has(d.service)) continue;
       out.push({
         line: db.routes.get(d.route)?.short || d.route,

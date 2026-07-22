@@ -1,0 +1,2 @@
+feed_publisher_name,feed_publisher_url,feed_lang,feed_start_date,feed_end_date,feed_contact_email,feed_contact_url,feed_version
+"Sociedade de Transportes Colectivos do Porto, E.I.M., S.A",http://www.stcp.pt,pt,20260720,20260730,powerqubit@stcp.pt,http://www.stcp.pt,2a685d1f-266b-45ed-a41f-85998d3259b2+41711396-769b-4b46-a009-727571721e31@202607202313

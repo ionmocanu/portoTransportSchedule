@@ -1,9 +1,10 @@
 import * as metroData from './data.js';
 import * as cpData from './data_cp.js';
+import * as stcpData from './data_stcp.js';
 import { getFare, getTripPlan } from './data.js';
 import { initI18n, setLang, getLang, t, LANGS } from './i18n.js';
 
-const FEEDS = { metro: metroData, cp: cpData };
+const FEEDS = { metro: metroData, cp: cpData, stcp: stcpData };
 
 const REFETCH_MS = 60_000;
 const TICK_MS = 5_000;
@@ -35,6 +36,7 @@ const el = {
   refresh: document.getElementById('refresh'),
   clockDisplay: document.getElementById('clock-display'),
   holidayWarning: document.getElementById('holiday-warning'),
+  disclaimer: document.getElementById('disclaimer'),
 };
 
 const state = {
@@ -83,6 +85,29 @@ function parkingIconHtml(stop) {
   return `<img class="parking-icon" src="${src}" alt="${alt}" title="${alt}">`;
 }
 
+/* Interchange icons — the operators' own logos (same files as the bottom
+   tab bar), shown next to a stop's name when a stop of another operator is
+   within walking distance (computed server-side from the feeds' coordinates). */
+const MODE_LOGOS = {
+  metro: './images/METRO.svg',
+  cp: './images/CP.svg',
+  stcp: './images/STCP.svg',
+};
+
+function connectionIconsHtml(stop) {
+  if (!stop.connections?.length) return '';
+  return stop.connections
+    .map((c) => {
+      const label = t(`conn.${c.type}`, { name: c.name, dist: c.dist_m });
+      return `<img class="conn-icon" src="${MODE_LOGOS[c.type]}" alt="${label}" title="${label}">`;
+    })
+    .join('');
+}
+
+function stopBadgesHtml(stop) {
+  return parkingIconHtml(stop) + connectionIconsHtml(stop);
+}
+
 function selectStop(stopId, directionId) {
   const stop = feed.STOPS[stopId];
   state.stopId = stopId;
@@ -93,7 +118,7 @@ function selectStop(stopId, directionId) {
 
   remember.writeScope(state.mode, { stopId: state.stopId, directionId: state.directionId });
   remember.pushRecent(state.mode, state.stopId);
-  el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
+  el.stopName.innerHTML = `${stop.name}${stopBadgesHtml(stop)}`;
   closeChooser();
   renderDiagram();
   renderLineControls();
@@ -292,7 +317,7 @@ function renderStopList(query) {
       const dots = stop.lines
         .map((l) => `<span class="dot" style="--c:${feed.LINE_COLORS[l] || ''}"></span>`)
         .join('');
-      b.innerHTML = `<span class="chooser__itemname">${stop.name}${parkingIconHtml(stop)}</span><span class="chooser__dots">${dots}</span>`;
+      b.innerHTML = `<span class="chooser__itemname">${stop.name}${stopBadgesHtml(stop)}</span><span class="chooser__dots">${dots}</span>`;
       b.addEventListener('click', () => selectStop(stop.id, state.directionId));
       li.append(b);
       return li;
@@ -358,7 +383,9 @@ function renderBoard() {
   const live = payload.departures
     .filter((d) => !state.lineFilter || d.route_id === state.lineFilter)
     .map((d) => ({ ...d, seconds_left: secondsLeft(d) }))
-    .filter((d) => d.seconds_left > -30);
+    // keep just-departed metros on the board ~2 min past the "at station"
+    // window (-30s), shown dimmed with a "departed X min ago" note
+    .filter((d) => d.seconds_left > -150);
 
   if (!live.length) {
     el.board.innerHTML =
@@ -366,18 +393,39 @@ function renderBoard() {
     return;
   }
 
+  // Departed metros linger as dimmed rows above the big card, so "next"
+  // always stays the next metro you can actually catch.
+  const departed = live.filter(hasDeparted).slice(-2);
+  const upcoming = live.filter((d) => !hasDeparted(d));
+
   const maxTotal = state.lineFilter ? 5 : 6;
-  const [first, ...rest] = live;
-  el.board.replaceChildren(nextCard(first), ...rest.slice(0, maxTotal - 1).map(row));
+  const [first, ...rest] = upcoming;
+  const children = departed.map(row);
+  if (first) {
+    children.push(nextCard(first),
+      ...rest.slice(0, Math.max(0, maxTotal - 1 - departed.length)).map(row));
+  }
+  el.board.replaceChildren(...children);
 }
 
 function lastTagHtml(d) {
-  return d.is_last ? `<span class="last-tag">${t('board.last')}</span>` : '';
+  return (d.terminates ? `<span class="term-tag">${t('board.terminates')}</span>` : '')
+    + (d.is_last ? `<span class="last-tag">${t('board.last')}</span>` : '');
+}
+
+// A metro is "at the station" from 30s before its timetable minute until 30s
+// after; past that it counts as departed and lingers dimmed for ~2 minutes.
+function hasDeparted(d) {
+  return d.seconds_left <= -30;
+}
+
+function departedMins(d) {
+  return Math.max(1, Math.round(-d.seconds_left / 60));
 }
 
 function nextCard(d) {
   const div = document.createElement('article');
-  div.className = 'next';
+  div.className = 'next' + (hasDeparted(d) ? ' next--departed' : '');
   div.style.setProperty('--line', feed.LINE_COLORS[d.route_id] || 'var(--ink)');
   const mins = Math.floor(d.seconds_left / 60);
   div.innerHTML = `
@@ -386,7 +434,9 @@ function nextCard(d) {
       <div class="next__headsign">${d.headsign}${lastTagHtml(d)}</div>
       <div class="next__time">${d.departure_time}</div>
     </div>
-    ${mins < 1
+    ${hasDeparted(d)
+      ? `<div class="next__due next__due--departed">${t('board.departed', { min: departedMins(d) })}</div>`
+      : mins < 1
       ? `<div class="next__due">${t('board.due')}</div>`
       : `<div class="next__count"><span class="next__min">${mins}</span><span class="next__unit">${t('board.min')}</span></div>`
     }`;
@@ -395,8 +445,8 @@ function nextCard(d) {
 
 function row(d) {
   const div = document.createElement('article');
-  div.className = 'row';
-  const mins = Math.max(0, Math.floor(d.seconds_left / 60));
+  div.className = 'row' + (hasDeparted(d) ? ' row--departed' : '');
+  const mins = hasDeparted(d) ? -departedMins(d) : Math.max(0, Math.floor(d.seconds_left / 60));
   div.innerHTML = `
     <span class="badge" style="--line:${feed.LINE_COLORS[d.route_id] || 'var(--ink)'}">${d.line}</span>
     <div>
@@ -539,13 +589,16 @@ async function loadTripPlan() {
   }
 
   if (fareResult.status === 'fulfilled') {
+    const zones = planResult.status === 'fulfilled' ? planResult.value.zones : null;
     parts.push(`
       <div class="planner__fares">
         ${fareResult.value.fares.map((f) => `
           <div class="planner__fare">
+            ${f.ticket ? `<span class="planner__fareticket">${t('fare.ticket', { ticket: f.ticket })}</span>` : ''}
             <span class="planner__fareprice">€${f.price.toFixed(2)}</span>
             ${f.route_name ? `<span class="planner__fareline">${t('fare.via', { line: f.route_name })}</span>` : ''}
           </div>`).join('')}
+        ${zones && zones.length ? `<div class="planner__zones">${t('planner.zones', { zones: zones.join(' · ') })}</div>` : ''}
       </div>`);
   } else {
     console.error(fareResult.reason);
@@ -615,7 +668,7 @@ function refreshUI() {
   updateClock();
   if (state.stopId) {
     const stop = feed.STOPS[state.stopId];
-    el.stopName.innerHTML = `${stop.name}${parkingIconHtml(stop)}`;
+    el.stopName.innerHTML = `${stop.name}${stopBadgesHtml(stop)}`;
     renderDiagram();
   }
   if (!el.stopPanel.hidden) {
@@ -626,7 +679,16 @@ function refreshUI() {
   renderBoard();
   stamp();
   renderFeedValidity();
+  renderDisclaimer();
   if (state.mode === 'metro' && el.plannerFrom.value && el.plannerTo.value) loadTripPlan();
+}
+
+/* Disclaimer names only the operator whose tab is active, plus the note
+   that interchange icons are purely proximity-based (the 400 m radius in
+   connections.js — keep the i18n strings in sync if that changes). */
+function renderDisclaimer() {
+  if (!el.disclaimer) return;
+  el.disclaimer.textContent = `${t(`disclaimer.${state.mode}`)} ${t('disclaimer.connections')}`;
 }
 
 /* ── Tabs (METRO / Comboio) ────────────────────────────────────── */
@@ -644,6 +706,7 @@ async function switchMode(mode) {
   feed = FEEDS[mode];
   state.lineFilter = null;
   renderTabbar();
+  renderDisclaimer();
   if (el.plannerSection) el.plannerSection.hidden = mode !== 'metro';
 
   if (!Object.keys(feed.STOPS).length) {
@@ -687,6 +750,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
   await initI18n();
   renderLangSwitch();
   renderTabbar();
+  renderDisclaimer();
 
   try {
     await metroData.init();

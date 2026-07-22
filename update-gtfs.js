@@ -56,8 +56,15 @@ function validate(files, required) {
     if (!files.has(f)) throw new Error(`feed is missing ${f}`);
   }
   const cal = files.get('calendar.txt').toString('utf8');
-  const ends = [...cal.matchAll(/,(\d{8})\s*$/gm)].map((m) => m[1]);
-  if (!ends.length) throw new Error('calendar.txt has no end dates');
+  let ends = [...cal.matchAll(/,(\d{8})\s*$/gm)].map((m) => m[1]);
+  // STCP ships an empty calendar.txt and drives all service through
+  // calendar_dates.txt exceptions — the latest exception date is the
+  // feed's real validity horizon then.
+  if (!ends.length && files.has('calendar_dates.txt')) {
+    const cd = files.get('calendar_dates.txt').toString('utf8');
+    ends = [...cd.matchAll(/,(\d{8}),/g)].map((m) => m[1]);
+  }
+  if (!ends.length) throw new Error('feed has no service end dates');
   const maxEnd = ends.sort().at(-1);
   const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
   if (maxEnd < today) throw new Error(`feed already expired (ends ${maxEnd})`);
@@ -129,8 +136,8 @@ const METRO_PAGE = `${METRO_SITE}/pages/337`;
 // own "for apps" zip omits it (along with fares/amenities).
 const METRO_REQUIRED = ['routes.txt', 'trips.txt', 'stop_times.txt', 'stops.txt', 'calendar.txt'];
 
-async function findZipResourcesCkan() {
-  const res = await fetch(METRO_CKAN_API, { headers: { ...BROWSER_HEADERS, accept: 'application/json' } });
+async function findZipResourcesCkan(apiUrl) {
+  const res = await fetch(apiUrl, { headers: { ...BROWSER_HEADERS, accept: 'application/json' } });
   if (!res.ok) throw new Error(`portal API ${res.status}`);
   const body = await res.json();
   if (!body.success || !body.result?.resources) throw new Error('unexpected portal response');
@@ -157,7 +164,7 @@ async function findZipResourcesMetroSite() {
 }
 
 async function findMetroResources() {
-  const lists = await Promise.allSettled([findZipResourcesMetroSite(), findZipResourcesCkan()]);
+  const lists = await Promise.allSettled([findZipResourcesMetroSite(), findZipResourcesCkan(METRO_CKAN_API)]);
   const resources = [];
   const errors = [];
   for (const [i, r] of lists.entries()) {
@@ -191,6 +198,24 @@ async function findCpResources() {
 
 const cp = makeUpdater({ label: 'CP GTFS', dir: CP_DIR, findResources: findCpResources, required: CP_REQUIRED });
 
+// --- STCP (Porto city buses) --------------------------------------------
+
+const STCP_DIR = process.env.GTFS_STCP_DIR || path.join(__dirname, 'gtfs_stcp');
+const STCP_CKAN_API = 'https://opendata.porto.digital/api/3/action/package_show?id=horarios-paragens-e-rotas-em-formato-gtfs-stcp';
+// calendar.txt is present but empty in STCP exports — all service dates
+// live in calendar_dates.txt, so that one is genuinely required here.
+const STCP_REQUIRED = ['routes.txt', 'trips.txt', 'stop_times.txt', 'stops.txt', 'calendar.txt', 'calendar_dates.txt'];
+
+// STCP publishes on the same CKAN portal as the metro, but as a new resource
+// every few days ("GTFS STCP 21-07-2026 Mais Recente", …) — the shared CKAN
+// lookup already sorts by last_modified, so the newest upload wins.
+const stcp = makeUpdater({
+  label: 'STCP GTFS',
+  dir: STCP_DIR,
+  findResources: () => findZipResourcesCkan(STCP_CKAN_API),
+  required: STCP_REQUIRED,
+});
+
 module.exports = {
   // back-compat: default export is the metro updater, as before
   checkAndUpdate: metro.checkAndUpdate,
@@ -198,10 +223,11 @@ module.exports = {
   unzip,
   metro,
   cp,
+  stcp,
 };
 
 if (require.main === module) {
-  const which = process.argv.includes('--cp') ? cp : metro;
+  const which = process.argv.includes('--stcp') ? stcp : process.argv.includes('--cp') ? cp : metro;
   which.checkAndUpdate({ force: process.argv.includes('--force') })
     .then((c) => console.log(c ? 'Feed updated.' : 'No change.'))
     .catch((err) => { console.error('Update failed:', err.message); process.exitCode = 1; });

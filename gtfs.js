@@ -111,7 +111,7 @@ function load() {
   readCsv('fare_rules.txt', (r) => {
     const k = `${r.origin_id}|${r.destination_id}`;
     if (!db.fareRules.has(k)) db.fareRules.set(k, []);
-    db.fareRules.get(k).push({ route: r.route_id || null, price: db.fares.get(r.fare_id) });
+    db.fareRules.get(k).push({ route: r.route_id || null, ticket: r.fare_id, price: db.fares.get(r.fare_id) });
   });
 
   const trips = new Map();
@@ -163,9 +163,12 @@ function load() {
   db.departures.clear();
   let kept = 0;
   for (const c of candidates) {
-    if (c.seq === lastSeq.get(c.tripId)) continue;
     const trip = trips.get(c.tripId);
     if (!trip) continue;
+    // A trip's last stop is an arrival, not a departure — but riders at a
+    // terminus (or a short-turn stop like Fórum Maia) still want to see the
+    // metro that ends there, so keep it flagged instead of dropping it.
+    const terminates = c.seq === lastSeq.get(c.tripId);
     const k = key(c.stop, trip.dir);
     if (!db.departures.has(k)) db.departures.set(k, []);
     db.departures.get(k).push({
@@ -173,6 +176,7 @@ function load() {
       route: trip.route,
       headsign: trip.headsign,
       service: trip.service,
+      terminates,
     });
     kept++;
   }
@@ -186,17 +190,24 @@ function load() {
   );
 }
 
-/* Derive per-stop directions with full per-line destination breakdown. */
+/* Derive per-stop directions with full per-line destination breakdown.
+   Real departures and terminating arrivals are counted apart: arrivals never
+   steal a direction's label or a line's headsign from through-traffic, but
+   at a pure terminus (Aeroporto, ISMAI…) they're all there is, so they alone
+   create the direction card. */
 function buildStopConfig() {
-  // stop_id → { dirs: Map(dir → { counts: Map(headsign→n), byLine: Map(route→Set(headsign)) }), lines: Set }
+  // stop_id → { dirs: Map(dir → { thru, term }), lines: Set }, where thru/term
+  // are each { counts: Map(headsign→n), byLine: Map(route→Set(headsign)) }
   const perStop = new Map();
+  const bucket = () => ({ counts: new Map(), byLine: new Map() });
   for (const [k, list] of db.departures) {
     const [stopId, dir] = k.split('|');
     if (!perStop.has(stopId)) perStop.set(stopId, { dirs: new Map(), lines: new Set() });
     const entry = perStop.get(stopId);
-    if (!entry.dirs.has(dir)) entry.dirs.set(dir, { counts: new Map(), byLine: new Map() });
-    const d = entry.dirs.get(dir);
+    if (!entry.dirs.has(dir)) entry.dirs.set(dir, { thru: bucket(), term: bucket() });
+    const dd = entry.dirs.get(dir);
     for (const dep of list) {
+      const d = dep.terminates ? dd.term : dd.thru;
       d.counts.set(dep.headsign, (d.counts.get(dep.headsign) || 0) + 1);
       entry.lines.add(dep.route);
       if (!d.byLine.has(dep.route)) d.byLine.set(dep.route, new Set());
@@ -214,22 +225,30 @@ function buildStopConfig() {
       lines: [...entry.lines].sort(),
       directions: [...entry.dirs]
         .sort(([a], [b]) => b.localeCompare(a)) // dir '1' (toward centre) first
-        .map(([dir, { counts, byLine }]) => {
-          const ranked = [...counts].sort((a, b) => b[1] - a[1]);
-          // Per-line: sort lines, pick the most common headsign per line
+        .map(([dir, { thru, term }]) => {
+          // Label/headsigns come from through departures when there are any;
+          // arrivals-only directions (termini) fall back to the term bucket.
+          const primary = thru.counts.size ? thru : term;
+          const ranked = [...primary.counts].sort((a, b) => b[1] - a[1]);
+          // Per-line: through lines first-class; lines that only ever
+          // terminate here still get a pill so the stop shows they serve it.
+          const byLine = new Map(thru.byLine);
+          for (const [route, hs] of term.byLine) if (!byLine.has(route)) byLine.set(route, hs);
           const lines = [...byLine]
             .sort(([a], [b]) => a.localeCompare(b, 'pt'))
             .map(([route, headsigns]) => {
               const r = db.routes.get(route);
               // pick the most frequent headsign for this line at this stop
               const hs = [...headsigns].sort((a, b) =>
-                (counts.get(b) || 0) - (counts.get(a) || 0)
+                (primary.counts.get(b) || term.counts.get(b) || 0) -
+                (primary.counts.get(a) || term.counts.get(a) || 0)
               )[0];
               return { route, short: r?.short || route, color: r?.color || '#16305C', headsign: hs };
             });
           return {
             id: dir,
             label: ranked[0][0],   // most common overall headsign
+            arrivals_only: !thru.counts.size,
             lines,                  // [{route, short, color, headsign}]
           };
         }),
@@ -357,6 +376,7 @@ function getFare(originStopId, destStopId) {
     fares: rules.map((r) => ({
       route_id: r.route,
       route_name: r.route ? db.routes.get(r.route)?.short || r.route : null,
+      ticket: r.ticket,   // Andante occasional title to buy (Z2, Z3, …)
       price: r.price,
     })),
   };
@@ -410,6 +430,20 @@ function getTripPlan(originId, destId) {
   }
 
   function buildLeg(fromStopObj, toStopObj, candidates) {
+    // Andante zones this leg actually rides through, in stop order. All the
+    // candidates here are tied on the same from→to pair along the same
+    // corridor, so the first option's stop sequence is representative.
+    const { route: zRoute, direction: zDir } = candidates[0];
+    const order = db.routeStopOrder.get(key(zRoute, zDir)) || [];
+    const i = order.indexOf(fromStopObj.id);
+    const j = order.indexOf(toStopObj.id);
+    const zones = [];
+    if (i !== -1 && j > i) {
+      for (const sid of order.slice(i, j + 1)) {
+        const z = db.stopZones.get(sid);
+        if (z && zones.at(-1) !== z) zones.push(z);
+      }
+    }
     const options = candidates.map(({ route, direction }) => {
       const r = db.routes.get(route);
       // The headsign is what a rider actually sees on the platform at the
@@ -431,15 +465,26 @@ function getTripPlan(originId, destId) {
       from_name: fromStopObj.name,
       to_stop: toStopObj.id,
       to_name: toStopObj.name,
+      zones,
       options,
     };
+  }
+
+  // Whole-trip zone list: legs joined end-to-end (the transfer stop's zone
+  // ends one leg and starts the next, so consecutive duplicates collapse).
+  function withZones(plan) {
+    const zones = [];
+    for (const leg of plan.legs) {
+      for (const z of leg.zones) if (zones.at(-1) !== z) zones.push(z);
+    }
+    return { ...plan, zones };
   }
 
   // 1. Direct: any line(s) serving both stops, in a direction that actually
   // goes from origin toward destination.
   const directOptions = findOptions(origin, dest);
   if (directOptions.length) {
-    return { type: 'direct', legs: [buildLeg(origin, dest, directOptions)] };
+    return withZones({ type: 'direct', legs: [buildLeg(origin, dest, directOptions)] });
   }
 
   // 2. One transfer: walk forward from the origin along each of its lines,
@@ -477,13 +522,13 @@ function getTripPlan(originId, destId) {
   const leg1Options = findOptions(origin, best.stop);
   const leg2Options = findOptions(best.stop, dest);
 
-  return {
+  return withZones({
     type: 'transfer',
     legs: [
       buildLeg(origin, best.stop, leg1Options),
       buildLeg(best.stop, dest, leg2Options),
     ],
-  };
+  });
 }
 
 /* Extract all dates where an exception/holiday is explicitly configured, converted to YYYY-MM-DD */
@@ -523,7 +568,8 @@ function collect(list, days, now, ignoreWindow) {
     for (const d of list) {
       if (!active.has(d.service)) continue;
       const absSec = d.sec + day.offset;
-      if (!last.has(d.route) || absSec > last.get(d.route)) last.set(d.route, absSec);
+      const lk = d.terminates ? `${d.route}|t` : d.route; // arrivals ranked apart
+      if (!last.has(lk) || absSec > last.get(lk)) last.set(lk, absSec);
     }
     return last;
   });
@@ -535,7 +581,9 @@ function collect(list, days, now, ignoreWindow) {
 
     for (const d of list) {
       const untilSec = d.sec + day.offset - now.sec;
-      if (untilSec < 0 || untilSec > 3 * 3600) continue;
+      // keep recently-departed rows (down to -150s) so the board can show
+      // "departed X min ago" even right after a refetch
+      if (untilSec < -150 || untilSec > 3 * 3600) continue;
       if (!active.has(d.service)) continue;
       out.push({
         line: db.routes.get(d.route)?.short || d.route,
@@ -544,7 +592,8 @@ function collect(list, days, now, ignoreWindow) {
         departure_time: secToHm(d.sec),
         seconds_until: untilSec,
         realtime: false,
-        is_last: d.sec + day.offset === lastForRoute[i].get(d.route),
+        terminates: !!d.terminates,
+        is_last: d.sec + day.offset === lastForRoute[i].get(d.terminates ? `${d.route}|t` : d.route),
       });
     }
   });
