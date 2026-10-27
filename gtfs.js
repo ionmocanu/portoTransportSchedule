@@ -50,6 +50,7 @@ const db = {
   fareRules: new Map(),   // 'originZone|destZone' → [{ route, price }]
   departures: new Map(),  // 'stopId|dir' → [{ sec, route, headsign, service }]
   routeStopOrder: new Map(), // 'route|dir' → [stopId, ...] in travel order
+  hopSecs: new Map(),     // 'route|dir' → [secs from stop i to i+1, ...] (median of timetable)
   stops: [],              // config for the frontend, built after load
   loadedAt: null,
 };
@@ -142,7 +143,7 @@ function load() {
       seq,
     });
     if (!tripStops.has(r.trip_id)) tripStops.set(r.trip_id, []);
-    tripStops.get(r.trip_id).push({ seq, stop: r.stop_id });
+    tripStops.get(r.trip_id).push({ seq, stop: r.stop_id, sec: hmsToSec(r.departure_time) });
   });
 
   // Per (route, direction), keep the longest observed trip as the
@@ -159,6 +160,29 @@ function load() {
     bestPattern.set(k, [...stopsArr].sort((a, b) => a.seq - b.seq).map((s) => s.stop));
   }
   for (const [k, stops] of bestPattern) db.routeStopOrder.set(k, stops);
+
+  // Scheduled time between consecutive stops of each line, for the trip
+  // view's "N min to …". Every trip contributes its hops; the median keeps
+  // one oddly-timed trip (night service, recovery time) from skewing it.
+  db.hopSecs.clear();
+  const hopSamples = new Map(); // 'route|dir|from|to' → [secs]
+  for (const [tripId, stopsArr] of tripStops) {
+    const trip = trips.get(tripId);
+    if (!trip) continue;
+    const ordered = [...stopsArr].sort((a, b) => a.seq - b.seq);
+    for (let i = 1; i < ordered.length; i++) {
+      const k = `${trip.route}|${trip.dir}|${ordered[i - 1].stop}|${ordered[i].stop}`;
+      if (!hopSamples.has(k)) hopSamples.set(k, []);
+      hopSamples.get(k).push(ordered[i].sec - ordered[i - 1].sec);
+    }
+  }
+  const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  for (const [k, stops] of db.routeStopOrder) {
+    db.hopSecs.set(k, stops.slice(1).map((to, i) => {
+      const samples = hopSamples.get(`${k}|${stops[i]}|${to}`);
+      return samples ? Math.max(30, median(samples)) : 90;
+    }));
+  }
 
   db.departures.clear();
   let kept = 0;
@@ -313,6 +337,54 @@ function getConfig() {
     feed_valid_until: feedValidUntil(),
     holidays: getHolidayDates(),
   };
+}
+
+/* Scheduled departures from a stop, every line and direction, as absolute
+   times (epoch ms) from 90 min ago to 2 h ahead. The trip view matches the
+   moment the metro left a station against these to tell which line it is. */
+function getStopTimes(stopId) {
+  if (!db.stopNames.has(stopId)) return { error: 'unknown_stop' };
+  const now = lisbonNow();
+  const nowMs = Date.now();
+  const midnight = nowMs - now.sec * 1000; // today 00:00 in Lisbon, as epoch ms
+  const days = [
+    { ...shiftYmd(now.ymd, -1), base: midnight - 86400000 },
+    { ymd: now.ymd, weekday: now.weekday, base: midnight },
+  ];
+  const ignoreWindow = now.ymd > feedValidUntil(); // same grace mode as departures
+  const out = [];
+  for (const day of days) {
+    const active = new Set([...db.calendar.keys()].filter((s) => serviceRunsOn(s, day.ymd, day.weekday, ignoreWindow)));
+    for (const [sid, type] of db.exceptions.get(day.ymd) || []) if (type === 1) active.add(sid);
+    for (const dir of ['0', '1']) {
+      for (const d of db.departures.get(key(stopId, dir)) || []) {
+        if (d.terminates || !active.has(d.service)) continue;
+        const at = day.base + d.sec * 1000;
+        if (at >= nowMs - 90 * 60000 && at <= nowMs + 120 * 60000) out.push({ route: d.route, dir, at });
+      }
+    }
+  }
+  return { stop: stopId, departures: out.sort((a, b) => a.at - b.at) };
+}
+
+/* Every line in both directions, for the GPS trip view: stops in travel
+   order, the terminus it runs to, and scheduled seconds for each hop. */
+function getLines() {
+  return [...db.routeStopOrder]
+    .map(([k, stops]) => {
+      const [route, dir] = k.split('|');
+      const r = db.routes.get(route);
+      return {
+        route,
+        short: r?.short || route,
+        color: r?.color || '#16305C',
+        dir,
+        terminus: db.stopNames.get(stops.at(-1)) || stops.at(-1),
+        stops,
+        hop_secs: db.hopSecs.get(k),
+      };
+    })
+    .sort((a, b) => a.route.localeCompare(b.route, 'pt') || a.dir.localeCompare(b.dir));
 }
 
 function getDepartures(stopId, directionId, limit = 60) {
@@ -631,4 +703,4 @@ function secToHm(sec) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-module.exports = { load, getConfig, getDepartures, getFare, getTripPlan };
+module.exports = { load, getConfig, getDepartures, getFare, getTripPlan, getLines, getStopTimes };

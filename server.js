@@ -92,7 +92,7 @@ const TYPES = {
 // covers the modules app.js pulls in by plain relative path.
 const INDEX_HTML = path.join(ROOT, 'index.html');
 const ASSET_TAG = encodeURIComponent(APP_VERSION.split(' ')[0]);
-const MODULES = ['data.js', 'i18n.js'];
+const MODULES = ['data.js', 'i18n.js', 'trip.js', 'trip-core.js'];
 
 function versionAssets(html) {
   const importMap = JSON.stringify({ imports: Object.fromEntries(MODULES.map((m) => [`./${m}`, `./${m}?v=${ASSET_TAG}`])) });
@@ -112,6 +112,11 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/api/config')  return json(res, 200, { ...gtfs.getConfig(), app_version: APP_VERSION });
   if (url.pathname === '/api/status')  return json(res, 200, { metro: updater.metro.readState() });
+  if (url.pathname === '/api/lines')   return json(res, 200, gtfs.getLines());
+  if (url.pathname === '/api/stop-times') {
+    const payload = gtfs.getStopTimes(url.searchParams.get('stop'));
+    return json(res, payload.error ? 400 : 200, payload);
+  }
   if (url.pathname === '/api/departures') {
     const payload = gtfs.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
     return json(res, payload.error ? 400 : 200, payload);

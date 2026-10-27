@@ -59,6 +59,20 @@
       </div>
     </div>
 
+    <button type="button" class="trip-cta" id="trip-open">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z" />
+        <circle cx="12" cy="9" r="2.5" />
+      </svg>
+      <span class="trip-cta__text">
+        <span class="trip-cta__title" data-i18n="trip.open">Follow my trip</span>
+        <span class="trip-cta__hint" data-i18n="trip.openHint">GPS · next stops and minutes</span>
+      </span>
+      <svg class="trip-cta__chev" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </button>
+
     <section class="picker" aria-labelledby="picker-heading">
       <h2 class="picker__heading" id="picker-heading" data-i18n="direction.heading">Direction</h2>
       <div class="picker__diagram" id="diagram"></div>
@@ -95,6 +109,34 @@
   <p class="disclaimer" id="disclaimer"></p>
 
   <footer class="footer">Made by KariboH<span class="footer__version" id="app-version"></span></footer>
+
+  <section class="trip" id="trip" hidden aria-labelledby="trip-title">
+    <div class="trip__bar">
+      <button type="button" class="trip__close" id="trip-close" data-i18n-aria-label="trip.close">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+      <h2 class="trip__title" id="trip-title" data-i18n="trip.title">Trip</h2>
+      <span class="trip__gps" id="trip-gps" role="status"></span>
+    </div>
+    <div class="trip__body" id="trip-body">
+      <div id="trip-hero" aria-live="polite"></div>
+      <div class="tnav" id="trip-nav" hidden>
+        <div class="tnav__track tnav__track--behind"></div>
+        <div class="tnav__track tnav__track--ahead"></div>
+        <div class="tnav__fork"></div>
+        <div class="tnav__stops"></div>
+        <span class="tnav__pulse" aria-hidden="true"></span>
+        <svg class="tnav__you" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r="17" />
+          <path d="M20 9 29 29 20 24.5 11 29Z" />
+        </svg>
+        <div class="tnav__bar"></div>
+      </div>
+      <div id="trip-rest"></div>
+    </div>
+  </section>
 
   <script type="module" src="app.js"></script>
 </body>

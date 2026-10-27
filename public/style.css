@@ -1122,3 +1122,786 @@ body[data-loading="true"] .board {
   font-size: 10px;
   opacity: 0.8;
 }
+
+/* ── Follow my trip ─────────────────────────────────────────────────
+   Full-screen view styled after the displays inside the metro: big stop
+   name, a strip of stations, and the lines as parallel coloured tracks
+   with slow arrows running in the direction of travel.
+   ------------------------------------------------------------------ */
+:root {
+  --trip-accent: #ef7d45;
+}
+
+.trip-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glaze);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.trip-cta:hover {
+  border-color: var(--hairline-firm);
+}
+.trip-cta svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.trip-cta__text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.trip-cta__title {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+}
+.trip-cta__hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.trip-cta__chev {
+  color: var(--ink-soft);
+}
+
+body.is-tripping {
+  overflow: hidden;
+}
+
+.trip {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+  background: var(--porcelain);
+  padding: env(safe-area-inset-top) var(--pad) calc(24px + env(safe-area-inset-bottom));
+}
+.trip[hidden] {
+  display: none;
+}
+.trip__bar,
+.trip__body {
+  max-width: 560px;
+  margin-inline: auto;
+}
+.trip__bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 12px;
+  background: var(--porcelain);
+}
+.trip__close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--hairline-firm);
+  border-radius: 50%;
+  background: var(--glaze);
+  color: var(--ink);
+  cursor: pointer;
+}
+.trip__close svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.trip__title {
+  margin: 0;
+  flex: 1;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  font-variation-settings: "wdth" 115;
+}
+.trip__gps {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--data);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.trip__gps:empty {
+  display: none;
+}
+.trip__gps::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hairline-firm);
+}
+.trip__gps[data-state="ok"]::before {
+  background: #2f9e5b;
+  box-shadow: 0 0 0 3px rgba(47, 158, 91, 0.18);
+}
+.trip__gps[data-state="lost"]::before {
+  background: #e0a526;
+}
+
+.trip__hero,
+.trip__block {
+  margin-bottom: 12px;
+  padding: 16px;
+  background: var(--glaze);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+}
+.trip__hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 18px;
+}
+.trip__herotext {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.trip__eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.trip__approx {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fbf0d9;
+  color: #8a6312;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.trip__stop {
+  margin-top: 4px;
+  font-family: var(--display);
+  font-size: clamp(26px, 8vw, 36px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 110;
+  line-height: 1.05;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.trip__towards {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.trip__eta {
+  flex: none;
+  font-family: var(--data);
+  font-size: 14px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.trip__eta b {
+  font-family: var(--display);
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--trip-accent);
+}
+.trip__eta--now {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--trip-accent);
+}
+
+/* Tracks: one coloured bar per line, side by side, arrows running up them.
+   The arrows move by transform (a strip one tile taller than the bar slid
+   up one tile), which the GPU composites — moving background-position
+   instead repaints every bar on every frame and makes the screen stutter. */
+.trip-tracks {
+  display: flex;
+  gap: 2px;
+}
+.trip-tracks i {
+  position: relative;
+  display: block;
+  width: 6px;
+  background: var(--c, var(--ink));
+  overflow: hidden;
+  transition: width 0.5s ease, opacity 0.5s ease, margin 0.5s ease;
+  animation: trip-stripe-in 0.5s ease;
+}
+.trip-tracks i.is-leaving {
+  width: 0;
+  margin-left: -2px;
+  opacity: 0;
+}
+@keyframes trip-stripe-in {
+  from { width: 0; margin-left: -2px; opacity: 0; }
+}
+.trip-tracks i::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: -12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M0.8 7.6 3 5 5.2 7.6' fill='none' stroke='white' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 6px 12px;
+  background-repeat: repeat-y;
+  opacity: 0.55;
+  will-change: transform;
+  animation: trip-arrows-up 1.6s linear infinite;
+  animation-delay: var(--arrow-offset, 0s);
+}
+@keyframes trip-arrows-up {
+  to { transform: translateY(-12px); }
+}
+
+/* Pulse rings: scale + fade, also GPU-only. */
+@keyframes trip-pulse {
+  from { transform: scale(1); opacity: 0.45; }
+  to { transform: scale(1.9); opacity: 0; }
+}
+
+
+/* Blocks: headings, hints, line chooser, "which way" buttons. */
+.trip__h {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.trip__hint,
+.trip__note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.trip__note {
+  margin: 4px 2px 12px;
+  font-size: 15px;
+}
+.trip__note--warn {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: #fbf0d9;
+  color: #6f4f0d;
+}
+.trip__foot {
+  margin: 4px 4px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.trip__linebtn {
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--line, var(--ink));
+  color: #fff;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 140ms;
+}
+.trip__linebtn[aria-pressed="true"] {
+  box-shadow: 0 0 0 3px var(--glaze), 0 0 0 5px var(--line);
+}
+.tnav__lines:has([aria-pressed="true"]) .trip__linebtn[aria-pressed="false"],
+.troute__split:has([aria-pressed="true"]) .trip__linebtn[aria-pressed="false"] {
+  opacity: 0.3;
+}
+.trip__linebtn--sm {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border-radius: 15px;
+  font-size: 13px;
+}
+
+.trip__leave {
+  display: grid;
+  gap: 8px;
+}
+.trip__leavebtn,
+.troute__branch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--hairline-firm);
+  border-radius: 10px;
+  background: var(--glaze);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+.trip__leavebtn {
+  cursor: pointer;
+}
+.trip__leavebtn:hover {
+  border-color: var(--ink-soft);
+}
+.trip__leavearrow {
+  flex: none;
+  color: var(--ink-soft);
+}
+.trip__leaveto {
+  flex: 1;
+  min-width: 0;
+}
+.trip__leavelines {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.trip__leavelines .badge {
+  min-width: 24px;
+  height: 24px;
+  font-size: 12px;
+}
+
+/* The whole route as one straight vertical line. */
+.troute {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.troute__row {
+  --track-w: calc(var(--n, 1) * 8px);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding-left: calc(var(--track-w) + 26px);
+}
+.troute__row .trip-tracks {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8px;
+}
+.troute__row:first-child .trip-tracks {
+  top: 50%;
+}
+.troute__row:last-child .trip-tracks {
+  bottom: 50%;
+}
+.troute__dot {
+  position: absolute;
+  top: 50%;
+  left: calc(8px + var(--track-w) / 2 - 1px);
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: var(--glaze);
+  transform: translate(-50%, -50%);
+}
+.troute__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+.troute__min {
+  flex: none;
+  font-family: var(--data);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.troute__row.is-passed {
+  min-height: 30px;
+}
+.troute__row.is-passed .trip-tracks {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.troute__row.is-passed .troute__dot {
+  width: 10px;
+  height: 10px;
+  border-width: 2px;
+  border-color: var(--hairline-firm);
+}
+.troute__row.is-passed .troute__name {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.troute__row.is-current .troute__dot,
+.troute__row.is-next .troute__dot {
+  width: 20px;
+  height: 20px;
+  border-color: var(--trip-accent);
+  background: radial-gradient(circle, var(--trip-accent) 0 3px, var(--glaze) 4px);
+}
+.troute__row.is-current .troute__name,
+.troute__row.is-next .troute__name {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+}
+.troute__row.is-current .troute__min,
+.troute__row.is-next .troute__min {
+  color: var(--trip-accent);
+  font-weight: 600;
+}
+.troute__row.is-you .troute__dot {
+  width: 12px;
+  height: 12px;
+  border-color: var(--glaze);
+  background: var(--ink);
+}
+.troute__row.is-you .troute__dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: trip-pulse 2s ease-out infinite;
+}
+/* No arrows on what's already behind you — less to animate, too. */
+.troute__row.is-passed .trip-tracks i::after,
+.tnav__track--behind .trip-tracks i::after {
+  display: none;
+}
+.troute__row.is-you .troute__name {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+/* Forward is up, so where the lines split comes first. */
+.troute__split {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.troute__split .trip__h {
+  margin: 0;
+}
+.troute__branchlines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: none;
+}
+.troute__branchto {
+  flex: 1;
+  min-width: 0;
+}
+.troute__more {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-family: var(--data);
+  font-size: 12px;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.troute__row.is-fold .trip-tracks {
+  -webkit-mask: repeating-linear-gradient(180deg, #000 0 4px, transparent 4px 8px);
+  mask: repeating-linear-gradient(180deg, #000 0 4px, transparent 4px 8px);
+}
+.troute__via {
+  font-family: var(--body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+/* ── GPS view ───────────────────────────────────────────────────────
+   You stay at --you; trip.js moves the stations, tracks and fork by
+   transform each second and the 1 s linear transitions make it glide. */
+.tnav {
+  --track-w: calc(var(--n, 1) * 8px);
+  position: relative;
+  height: max(360px, calc(100dvh - 250px));
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background-color: var(--glaze);
+  background-image: radial-gradient(var(--hairline) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+.tnav[hidden] {
+  display: none;
+}
+.tnav__track {
+  position: absolute;
+  top: 0;
+  left: calc(var(--x) - var(--track-w) / 2);
+  height: 0;
+  transition: transform 1s linear, height 1s linear, left 0.5s ease;
+}
+.tnav__track .trip-tracks {
+  height: 100%;
+  gap: 2px;
+}
+.tnav__track--behind .trip-tracks,
+.tnav.is-unknown .tnav__track--ahead .trip-tracks {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.tnav.is-unknown .trip-tracks i::after {
+  display: none;
+}
+
+.tnav__stops {
+  position: absolute;
+  inset: 0;
+}
+.tnav__stop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  transition: transform 1s linear;
+}
+.tnav__dot {
+  position: absolute;
+  top: 0;
+  left: var(--x);
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: var(--glaze);
+  transform: translate(-50%, -50%);
+}
+.tnav__name {
+  position: absolute;
+  top: 0;
+  left: calc(var(--x) + var(--track-w) / 2 + 14px);
+  right: 64px;
+  transform: translateY(-50%);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
+  text-shadow: 0 0 3px var(--glaze), 0 0 3px var(--glaze);
+}
+.tnav__min {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  transform: translateY(-50%);
+  font-family: var(--data);
+  font-size: 13px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.tnav__stop.is-passed .tnav__dot {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+  border-color: var(--hairline-firm);
+}
+.tnav__stop.is-passed .tnav__name {
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+.tnav__stop.is-next .tnav__dot,
+.tnav__stop.is-current .tnav__dot {
+  width: 22px;
+  height: 22px;
+  border-color: var(--trip-accent);
+  background: radial-gradient(circle, var(--trip-accent) 0 4px, var(--glaze) 5px);
+}
+.tnav__stop.is-next .tnav__name,
+.tnav__stop.is-current .tnav__name {
+  font-size: 18px;
+  font-weight: 800;
+}
+.tnav__stop.is-next .tnav__min {
+  color: var(--trip-accent);
+  font-weight: 600;
+}
+
+/* You: a navigation arrow, like the car in a car GPS. */
+.tnav__you {
+  position: absolute;
+  top: var(--you);
+  left: var(--x);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+.tnav__pulse {
+  position: absolute;
+  top: calc(var(--you) - 20px);
+  left: calc(var(--x) - 20px);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: trip-pulse 2s ease-out infinite;
+}
+.tnav__you circle {
+  fill: var(--glaze);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.tnav__you path {
+  fill: var(--ink);
+}
+.tnav.is-approx .tnav__you circle {
+  stroke-dasharray: 4 3;
+}
+
+/* Where lines split: branches fan out and run off the top. */
+.tnav__fork {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  transition: transform 1s linear, opacity 0.6s ease;
+}
+.tnav__fork.is-gone {
+  opacity: 0;
+  pointer-events: none;
+}
+.tnav__forksvg {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  overflow: visible;
+}
+.tnav__forksvg path {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.tnav__branch {
+  position: absolute;
+  top: -96px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: translate(-50%, -100%);
+}
+
+/* Bottom bar: possible lines and time to the end. */
+.tnav__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 12px 12px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--glaze) 40%);
+}
+.tnav__lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tnav__lines .trip__linebtn {
+  position: relative;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  font-size: 14px;
+}
+/* "Which line are you on?" — your pick ringed, the timetable's guess
+   tagged "auto", lines the timetable ruled out faded. */
+.tnav__choose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tnav__ask {
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.trip__linebtn.is-unlikely {
+  opacity: 0.3;
+}
+.trip__linebtn.is-auto {
+  box-shadow: 0 0 0 3px var(--glaze), 0 0 0 5px var(--line);
+}
+.trip__linebtn small {
+  position: absolute;
+  top: -9px;
+  right: -12px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--data);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.tnav__summary {
+  flex: 1;
+  align-self: flex-end;
+  font-size: 12px;
+  text-align: right;
+  color: var(--ink-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trip-tracks i::after,
+  .tnav__pulse,
+  .troute__row.is-you .troute__dot::after {
+    animation: none;
+  }
+  .tnav__track,
+  .tnav__stop,
+  .tnav__fork {
+    transition: none;
+  }
+}

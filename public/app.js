@@ -1,6 +1,7 @@
 import * as feed from './data.js';
 import { getFare, getTripPlan } from './data.js';
 import { initI18n, setLang, getLang, t, LANGS } from './i18n.js';
+import { initTrip, refreshTrip } from './trip.js';
 
 // localStorage key the metro picks have always been saved under.
 const SCOPE = 'metro';
@@ -654,6 +655,7 @@ function refreshUI() {
   stamp();
   renderFeedValidity();
   renderDisclaimer();
+  refreshTrip();
   if (el.plannerFrom.value && el.plannerTo.value) loadTripPlan();
 }
 
@@ -694,6 +696,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
   if (versionEl && feed.APP_VERSION) versionEl.textContent = `v ${feed.APP_VERSION}`;
   initTripPlanner();
   initNearMe();
+  initTrip({ stops: feed.STOPS, getStopId: () => state.stopId });
 
   el.stopButton.addEventListener('click', () =>
     el.stopPanel.hidden ? openChooser() : closeChooser()

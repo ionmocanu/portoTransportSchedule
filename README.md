@@ -39,6 +39,22 @@ porto-metro\
 - `GET /api/config` — all stops, directions, line colours
 - `GET /api/departures?stop=<stop_id>&direction=<0|1>` — next 8, up to 2 h out
 
+- `GET /api/lines` — every line in both directions: stops in order,
+  terminus, and scheduled seconds between consecutive stops
+
+## Follow my trip
+
+"Seguir a minha viagem" opens a full-screen view like the displays inside
+the metro: the station you're at or heading to, minutes to the next stops,
+which lines are still possible (they narrow down as lines split), and the
+whole route with minutes to every remaining stop. It uses the phone's GPS
+(the site must be on HTTPS) and the timetable — underground, where GPS
+drops out, the position is estimated from the timetable until GPS returns.
+The screen is kept awake while it's open.
+
+To try it without riding the metro, open `/?tripsim=C:1` (line:direction):
+a fake GPS rides that line at 10× speed.
+
 ## Automatic feed updates
 
 The server now keeps the timetable fresh by itself:
