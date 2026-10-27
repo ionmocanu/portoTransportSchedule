@@ -9,11 +9,36 @@ const ROOT = path.join(__dirname, 'public');
 const UPDATE_EVERY_MS = 24 * 60 * 60 * 1000;
 
 // App version shown in the page footer, so a deploy can be confirmed at a
-// glance: the git commit the server was started from (the Docker build
-// copies .git in with everything else), or APP_VERSION if set. The commit
-// date is only readable while the commit is a loose object, so it's optional.
+// glance: APP_VERSION if set, else the git commit the server was started
+// from, else (Portainer's git stacks build without .git) a fingerprint of
+// the app's own code. The commit date is only readable while the commit is
+// a loose object, so it's optional.
 function readAppVersion() {
   if (process.env.APP_VERSION) return process.env.APP_VERSION;
+  return readGitVersion() || readCodeVersion();
+}
+
+// Hash of the server and frontend source, line endings normalised so a
+// Windows checkout fingerprints the same as the Linux build. Changes
+// whenever the code does, wherever the image was built.
+function readCodeVersion() {
+  const files = ['server.js', 'gtfs.js', 'update-gtfs.js'];
+  (function walk(dir) {
+    for (const ent of fs.readdirSync(path.join(__dirname, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${ent.name}`;
+      if (ent.isDirectory()) walk(rel);
+      else files.push(rel);
+    }
+  })('public');
+  const hash = require('node:crypto').createHash('sha1');
+  for (const f of files.sort()) {
+    hash.update(`${f}\0`);
+    hash.update(fs.readFileSync(path.join(__dirname, f)).toString('latin1').replace(/\r\n/g, '\n'));
+  }
+  return `${hash.digest('hex').slice(0, 7)} (code)`;
+}
+
+function readGitVersion() {
   try {
     const gitDir = path.join(__dirname, '.git');
     let sha = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
@@ -26,7 +51,7 @@ function readAppVersion() {
         sha = packed.split('\n').find((l) => l.endsWith(` ${ref}`))?.split(' ')[0];
       }
     }
-    if (!/^[0-9a-f]{40}$/.test(sha || '')) return 'dev';
+    if (!/^[0-9a-f]{40}$/.test(sha || '')) return null;
     let date = '';
     try {
       const obj = require('node:zlib').inflateSync(fs.readFileSync(path.join(gitDir, 'objects', sha.slice(0, 2), sha.slice(2))));
@@ -35,7 +60,7 @@ function readAppVersion() {
     } catch { /* packed object — hash alone is enough */ }
     return `${sha.slice(0, 7)}${date}`;
   } catch {
-    return 'dev';
+    return null;
   }
 }
 const APP_VERSION = readAppVersion();
