@@ -129,7 +129,10 @@ function makeUpdater({ label, dir, findResources, required }) {
 // --- Metro do Porto ---------------------------------------------------
 
 const METRO_DIR = process.env.GTFS_DIR || path.join(__dirname, 'gtfs');
-const METRO_CKAN_API = 'https://opendata.porto.digital/api/3/action/package_show?id=horarios-paragens-e-rotas-em-formato-gtfs';
+// opendata.porto.digital moved to dadosabertos.cm-porto.pt (with renamed
+// dataset ids) in 2026 — the old host now 301s and its API 404s.
+const CKAN_BASE = 'https://dadosabertos.cm-porto.pt/api/3/action/package_show?id=';
+const METRO_CKAN_API = `${CKAN_BASE}horarios-paragens-e-rotas-metro-porto`;
 const METRO_SITE = 'https://www.metrodoporto.pt';
 const METRO_PAGE = `${METRO_SITE}/pages/337`;
 // calendar_dates.txt is required in the CKAN exports but the metro site's
@@ -201,7 +204,7 @@ const cp = makeUpdater({ label: 'CP GTFS', dir: CP_DIR, findResources: findCpRes
 // --- STCP (Porto city buses) --------------------------------------------
 
 const STCP_DIR = process.env.GTFS_STCP_DIR || path.join(__dirname, 'gtfs_stcp');
-const STCP_CKAN_API = 'https://opendata.porto.digital/api/3/action/package_show?id=horarios-paragens-e-rotas-em-formato-gtfs-stcp';
+const STCP_CKAN_API = `${CKAN_BASE}horarios-paragens-e-rotas-stcp`;
 // calendar.txt is present but empty in STCP exports — all service dates
 // live in calendar_dates.txt, so that one is genuinely required here.
 const STCP_REQUIRED = ['routes.txt', 'trips.txt', 'stop_times.txt', 'stops.txt', 'calendar.txt', 'calendar_dates.txt'];
