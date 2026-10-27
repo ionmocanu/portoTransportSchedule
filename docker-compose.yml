@@ -1,6 +1,10 @@
 services:
   porto-schedule:
     build: .
+    # Always rebuild from the checked-out code on deploy and never try to
+    # pull this image from Docker Hub — it only exists locally.
+    image: porto-schedule:latest
+    pull_policy: build
     container_name: porto_transport_schedule
     ports:
       # Maps port 8088 on your server to the port your Node app uses inside the container
