@@ -82,5 +82,16 @@
   "trip.which": "Which line are you on?",
   "trip.chosen": "Your line — tap again to undo",
   "trip.autoHint": "Line from the timetable — tap to change",
-  "trip.auto": "auto"
+  "trip.auto": "auto",
+  "trip.all": "All",
+  "trip.allHint": "Showing every possible line — tap one to pick it",
+  "map.open": "Network map",
+  "map.openHint": "Every line and station",
+  "map.title": "Network map",
+  "map.close": "Close map",
+  "map.schedule": "See departures",
+  "map.zoomIn": "Zoom in",
+  "map.zoomOut": "Zoom out",
+  "map.fit": "Show the whole map",
+  "map.hint": "Drag to move · pinch or scroll to zoom · tap a station"
 }

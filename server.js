@@ -92,7 +92,7 @@ const TYPES = {
 // covers the modules app.js pulls in by plain relative path.
 const INDEX_HTML = path.join(ROOT, 'index.html');
 const ASSET_TAG = encodeURIComponent(APP_VERSION.split(' ')[0]);
-const MODULES = ['data.js', 'i18n.js', 'trip.js', 'trip-core.js'];
+const MODULES = ['data.js', 'i18n.js', 'trip.js', 'trip-core.js', 'map.js'];
 
 function versionAssets(html) {
   const importMap = JSON.stringify({ imports: Object.fromEntries(MODULES.map((m) => [`./${m}`, `./${m}?v=${ASSET_TAG}`])) });

@@ -1309,7 +1309,10 @@ body.is-tripping {
   font-variation-settings: "wdth" 110;
   line-height: 1.05;
   color: var(--ink);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+.trip__stop.is-long {
+  font-size: clamp(22px, 6.4vw, 30px);
 }
 .trip__towards {
   margin-top: 6px;
@@ -1436,9 +1439,23 @@ body.is-tripping {
 .trip__linebtn[aria-pressed="true"] {
   box-shadow: 0 0 0 3px var(--glaze), 0 0 0 5px var(--line);
 }
-.tnav__lines:has([aria-pressed="true"]) .trip__linebtn[aria-pressed="false"],
+/* One line picked: the others fade. "All" picked: every line stays lit. */
+.tnav__lines:has(.trip__linebtn:not(.is-all)[aria-pressed="true"]) .trip__linebtn:not(.is-all)[aria-pressed="false"],
 .troute__split:has([aria-pressed="true"]) .trip__linebtn[aria-pressed="false"] {
   opacity: 0.3;
+}
+.trip__linebtn.is-all {
+  padding: 0 12px;
+  border: 1.5px solid var(--hairline-firm);
+  background: var(--glaze);
+  color: var(--ink);
+  font-size: 12px;
+}
+.trip__linebtn.is-all[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  box-shadow: none;
 }
 .trip__linebtn--sm {
   min-width: 30px;
@@ -1706,26 +1723,28 @@ body.is-tripping {
   background: var(--glaze);
   transform: translate(-50%, -50%);
 }
-.tnav__name {
+/* Name with its minutes underneath, centred on the station's dot — the
+   full width is left for long names like "NorteShopping I Sete Bicas". */
+.tnav__label {
   position: absolute;
   top: 0;
   left: calc(var(--x) + var(--track-w) / 2 + 14px);
-  right: 64px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
   transform: translateY(-50%);
+  text-shadow: 0 0 3px var(--glaze), 0 0 3px var(--glaze);
+}
+.tnav__name {
   font-family: var(--display);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.15;
   color: var(--ink);
-  text-shadow: 0 0 3px var(--glaze), 0 0 3px var(--glaze);
 }
 .tnav__min {
-  position: absolute;
-  top: 0;
-  right: 12px;
-  transform: translateY(-50%);
   font-family: var(--data);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ink-soft);
   white-space: nowrap;
 }
@@ -1904,4 +1923,206 @@ body.is-tripping {
   .tnav__fork {
     transition: none;
   }
+}
+
+/* ── Network map ────────────────────────────────────────────────────
+   Full-screen schematic of every line. map.js draws it in SVG and moves
+   one group for pan/zoom; the stage takes all touch gestures itself. */
+body.is-mapping {
+  overflow: hidden;
+}
+.netmap {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--porcelain);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+.netmap[hidden] {
+  display: none;
+}
+.netmap__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px var(--pad) 8px;
+}
+.netmap__chips {
+  display: flex;
+  gap: 6px;
+  padding: 0 var(--pad) 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.netmap__chips .trip__linebtn {
+  flex: none;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  font-size: 14px;
+}
+.netmap__chips:has(.trip__linebtn:not(.is-all)[aria-pressed="true"]) .trip__linebtn:not(.is-all)[aria-pressed="false"] {
+  opacity: 0.3;
+}
+.netmap__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  background-color: var(--glaze);
+  background-image: radial-gradient(var(--hairline) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.netmap__stage:active {
+  cursor: grabbing;
+}
+.nm-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.netmap__zoom {
+  position: absolute;
+  right: 14px;
+  bottom: calc(52px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.netmap__zoom button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--hairline-firm);
+  border-radius: 10px;
+  background: var(--glaze);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(22, 48, 92, 0.12);
+}
+.netmap__hint {
+  margin: 0;
+  padding: 8px var(--pad) 10px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+/* Map drawing */
+.nm-route path {
+  fill: none;
+  stroke-width: 4.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nm-route path.nm-express {
+  stroke: #fff;
+  stroke-width: 1;
+}
+.nm-stop-edge {
+  stroke: var(--ink);
+  stroke-width: 8.5;
+  stroke-linecap: round;
+}
+.nm-stop-fill {
+  stroke: #fff;
+  stroke-width: 5.5;
+  stroke-linecap: round;
+}
+.nm-bx {
+  fill: #c63920;
+}
+.nm-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+.nm-label text {
+  font-family: var(--body);
+  font-size: 9.5px;
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--glaze);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  cursor: pointer;
+}
+.nm-badge text {
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 800;
+  fill: #fff;
+}
+/* One line picked: the rest fades (map.js adds the per-line rules). */
+.netmap svg[data-focus] .nm-route,
+.netmap svg[data-focus] .nm-badge,
+.netmap svg[data-focus] .nm-stop,
+.netmap svg[data-focus] .nm-label {
+  opacity: 0.12;
+  transition: opacity 0.25s;
+}
+
+/* Station card */
+.nm-card {
+  position: absolute;
+  left: var(--pad);
+  right: calc(var(--pad) + 56px);
+  bottom: calc(52px + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--glaze);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: 0 6px 18px rgba(22, 48, 92, 0.16);
+}
+.nm-card[hidden] {
+  display: none;
+}
+.nm-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nm-card__name {
+  flex: 1;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.nm-card__lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.nm-card__lines .badge {
+  min-width: 24px;
+  height: 24px;
+  font-size: 12px;
+}
+.nm-card__go {
+  padding: 11px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--glaze);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.nm-here {
+  fill: none;
+  stroke: var(--trip-accent);
+  stroke-width: 3;
 }

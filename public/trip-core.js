@@ -12,11 +12,21 @@
 
 const AT_ENTER_M = 110;      // within this of a station → at it
 const AT_LEAVE_M = 170;      // must get this far again to count as departed
-const MOVE_M = 150;          // movement needed to read a direction mid-hop
+const MOVE_M = 300;          // movement needed to read a direction mid-hop
 const FIX_FRESH_MS = 20_000; // no fix for longer → GPS lost (tunnel)
 const DWELL_MS = 25_000;     // assumed stop time while running on the timetable
 const MAX_SKIP = 4;          // stops one fix may jump ahead (gaps, express)
 const ON_SEGMENT_M = 140;    // detour allowed to still be "on" a hop
+// Standing still indoors, a phone's position can jump a couple of hundred
+// metres. None of that may look like a departure:
+const MAX_ACC_M = 150;       // vaguer fixes are shown but never acted on
+const LEAVE_ACC_M = 100;     // only fixes at least this precise count towards leaving
+const LEAVE_FIXES = 3;       // fixes in a row away from the station to count as leaving
+const WALK_MPS = 2;          // a reported speed below this is not a metro
+const AWAY_M = 250;          // how far we must really get before the timetable is asked
+const MAX_MPS = 30;          // faster than any metro: a jump, not a journey
+const AVG_FIXES = 3;         // decisions use the average of the last few fixes
+const AVG_WINDOW_MS = 12_000;
 
 export function distM(a, b) {
   const toRad = (d) => (d * Math.PI) / 180;
@@ -33,6 +43,9 @@ const detour = (a, p, b) => distM(a, p) + distM(p, b) - distM(a, b);
 const GPS_LAG_MS = 30_000;    // GPS notices a departure ~half a minute after the doors close
 const MATCH_WINDOW_MS = 120_000;
 const MATCH_SLACK_MS = 45_000;
+
+// setFollow(ALL): show every possible line, ignoring the timetable's guess.
+export const ALL = '*';
 
 /* Which lines had a train leaving that station at that moment? `dep` is
    tracker.lastDeparture(), `departures` the /api/stop-times rows. Returns
@@ -65,8 +78,10 @@ export function createTracker(stops, lines) {
     leftBy: null,      // how we know we left: 'gps' | 'manual' | 'timetable'
     approx: false,     // position is a timetable estimate, not GPS
     progress: null,    // 0..1 along the current hop, from GPS
-    fix: null,
+    fix: null,         // averaged position we act on
     fixAt: -Infinity,
+    recent: [],        // last accepted raw fixes, for the average
+    jumps: 0,          // impossible jumps rejected in a row
     firstFix: null,    // where we were when tracking started off-station
   };
 
@@ -84,6 +99,7 @@ export function createTracker(stops, lines) {
   // lines the timetable says this train can be, else every possible one.
   function chosen(list = s.cands) {
     if (!list) return [];
+    if (s.follow === ALL) return list;
     if (s.follow) {
       const f = list.filter((c) => c.line.route === s.follow);
       if (f.length) return f;
@@ -120,6 +136,12 @@ export function createTracker(stops, lines) {
 
   function arrive(id, t, approx) {
     if (id === s.stop && s.phase !== 'locating') {
+      // Back at the station we "left" without ever getting clear of it: that
+      // was GPS noise, so forget anything it made us believe.
+      if (s.phase === 'between' && s.leftBy === 'gps' && (s.awayM || 0) < AWAY_M) {
+        s.cands = s.candsBefore;
+        s.likely = s.likelyBefore;
+      }
       s.phase = 'at';
       s.approx = approx;
       s.progress = null;
@@ -157,7 +179,7 @@ export function createTracker(stops, lines) {
   function dropImpossible() {
     if (!s.cands) { s.likely = null; return; }
     const routes = new Set(s.cands.map((c) => c.line.route));
-    if (s.follow && !routes.has(s.follow)) s.follow = null;
+    if (s.follow && s.follow !== ALL && !routes.has(s.follow)) s.follow = null;
     if (s.likely) {
       const keep = [...s.likely].filter((r) => routes.has(r));
       s.likely = keep.length ? new Set(keep) : null;
@@ -165,9 +187,14 @@ export function createTracker(stops, lines) {
   }
 
   function depart(t, approx, by = approx ? 'timetable' : 'gps') {
+    s.candsBefore = s.cands;
+    s.likelyBefore = s.likely;
     s.phase = 'between';
     s.leftAt = t;
     s.leftBy = by;
+    s.leftFrom = s.stop;
+    s.awayM = 0;
+    s.leaving = 0;
     s.approx = approx;
     s.progress = approx ? null : 0;
   }
@@ -207,6 +234,7 @@ export function createTracker(stops, lines) {
     s.phase = 'between';
     s.leftAt = s.fixAt;
     s.leftBy = null; // we never saw it leave, so its time proves nothing
+    s.leftFrom = null;
     s.progress = null;
   }
 
@@ -235,30 +263,73 @@ export function createTracker(stops, lines) {
     s.progress = Math.min(1, da / (da + distM(p, b) || 1));
   }
 
-  function fix(p, t) {
-    s.fix = p;
+  // A fix we act on: not too vague, and not an impossible jump from the
+  // last one (two jumps in a row that agree are believed, though — that's
+  // GPS coming back somewhere new, not noise). Returns the averaged position.
+  function accept(raw, t) {
+    if ((raw.accuracy ?? 30) > MAX_ACC_M) return null;
+    const prev = s.recent.at(-1);
+    if (prev && s.jumps < 2) {
+      const d = distM(prev, raw);
+      const dt = Math.max(1, (t - prev.t) / 1000);
+      if (d > 100 && d / dt > MAX_MPS) { s.jumps += 1; return null; }
+    }
+    s.jumps = 0;
+    s.recent = [...s.recent.filter((f) => t - f.t <= AVG_WINDOW_MS), { lat: raw.lat, lon: raw.lon, t }].slice(-AVG_FIXES);
+    const n = s.recent.length;
+    return {
+      lat: s.recent.reduce((a, f) => a + f.lat, 0) / n,
+      lon: s.recent.reduce((a, f) => a + f.lon, 0) / n,
+      accuracy: raw.accuracy,
+      speed: raw.speed,
+    };
+  }
+
+  function fix(raw, t) {
     s.fixAt = t;
+    // Too vague or a jump: GPS is alive, nothing more.
+    const p = accept(raw, t);
+    if (!p) return;
+    s.fix = p;
     const acc = Math.min(p.accuracy ?? 30, 80);
+    const still = p.speed != null && p.speed < WALK_MPS;
     const near = nearestStop(p);
     if (!near) return;
 
     if (near.d <= AT_ENTER_M + acc / 2 && (near.id !== s.stop || s.phase !== 'at')) {
       arrive(near.id, t, false);
+      s.leaving = 0;
       return;
     }
     if (s.phase === 'locating') {
-      if (!s.firstFix) s.firstFix = p;
-      else if (distM(s.firstFix, p) >= MOVE_M) readHop(p);
+      // Where we started: the first full average, not one noisy fix.
+      if (!s.firstFix) {
+        if (s.recent.length >= AVG_FIXES) s.firstFix = p;
+      } else if (!still && (p.accuracy ?? 30) <= LEAVE_ACC_M && distM(s.firstFix, p) >= MOVE_M) {
+        readHop(p);
+      }
       if (s.cands) slide(p);
       return;
     }
     if (s.phase === 'at') {
-      if (distM(p, at(s.stop)) <= AT_LEAVE_M + acc) { s.approx = false; return; }
-      depart(t, false);
+      // One fix out of the station is noise; leaving takes several in a row,
+      // and never at walking speed. The departure is dated from the first.
+      if (still || (p.accuracy ?? 30) > LEAVE_ACC_M || distM(p, at(s.stop)) <= AT_LEAVE_M + acc) {
+        s.approx = false;
+        s.leaving = 0;
+        return;
+      }
+      if (!s.leaving) s.leavingSince = t;
+      s.leaving = (s.leaving || 0) + 1;
+      if (s.leaving < LEAVE_FIXES) return;
+      depart(s.leavingSince, false);
     }
     s.approx = false;
     if (!s.cands) readDirection(p);
     if (s.cands) slide(p);
+    // Only a fix that's both on the line and well clear of the station we
+    // left proves we're really travelling.
+    if (s.cands && s.leftFrom && at(s.leftFrom)) s.awayM = Math.max(s.awayM || 0, distM(at(s.leftFrom), p));
   }
 
   function tick(t) {
@@ -286,9 +357,10 @@ export function createTracker(stops, lines) {
   // left, when, and the line/direction pairs that could have taken us.
   // Departures guessed by the timetable itself are no evidence.
   function lastDeparture() {
-    if (s.phase !== 'between' || !s.cands || (s.leftBy !== 'gps' && s.leftBy !== 'manual')) return null;
+    if (s.phase !== 'between' || !s.cands || !s.leftFrom) return null;
+    if (s.leftBy === 'gps' ? (s.awayM || 0) < AWAY_M : s.leftBy !== 'manual') return null;
     return {
-      stop: s.stop,
+      stop: s.leftFrom,
       at: s.leftAt,
       by: s.leftBy,
       options: s.cands.map((c) => ({ route: c.line.route, dir: c.line.dir })),

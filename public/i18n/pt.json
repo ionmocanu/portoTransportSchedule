@@ -82,5 +82,16 @@
   "trip.which": "Em que linha está?",
   "trip.chosen": "A sua linha — toque de novo para anular",
   "trip.autoHint": "Linha pelo horário — toque para mudar",
-  "trip.auto": "auto"
+  "trip.auto": "auto",
+  "trip.all": "Todas",
+  "trip.allHint": "A mostrar todas as linhas possíveis — toque numa para escolher",
+  "map.open": "Mapa da rede",
+  "map.openHint": "Todas as linhas e estações",
+  "map.title": "Mapa da rede",
+  "map.close": "Fechar mapa",
+  "map.schedule": "Ver horários",
+  "map.zoomIn": "Aproximar",
+  "map.zoomOut": "Afastar",
+  "map.fit": "Ver o mapa inteiro",
+  "map.hint": "Arraste para mover · aperte ou use a roda para ampliar · toque numa estação"
 }

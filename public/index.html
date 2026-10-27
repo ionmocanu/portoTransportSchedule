@@ -73,6 +73,20 @@
       </svg>
     </button>
 
+    <button type="button" class="trip-cta trip-cta--map" id="map-open">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2Z" />
+        <path d="M9 4v14M15 6v14" />
+      </svg>
+      <span class="trip-cta__text">
+        <span class="trip-cta__title" data-i18n="map.open">Network map</span>
+        <span class="trip-cta__hint" data-i18n="map.openHint">Every line and station</span>
+      </span>
+      <svg class="trip-cta__chev" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </button>
+
     <section class="picker" aria-labelledby="picker-heading">
       <h2 class="picker__heading" id="picker-heading" data-i18n="direction.heading">Direction</h2>
       <div class="picker__diagram" id="diagram"></div>
@@ -109,6 +123,26 @@
   <p class="disclaimer" id="disclaimer"></p>
 
   <footer class="footer">Made by KariboH<span class="footer__version" id="app-version"></span></footer>
+
+  <section class="netmap" id="netmap" hidden aria-labelledby="map-title">
+    <div class="netmap__bar">
+      <button type="button" class="trip__close" id="map-close" data-i18n-aria-label="map.close">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+      <h2 class="trip__title" id="map-title" data-i18n="map.title">Network map</h2>
+    </div>
+    <div class="netmap__chips" id="map-chips"></div>
+    <div class="netmap__stage" id="map-stage"></div>
+    <div class="netmap__zoom">
+      <button type="button" data-map-zoom="in" data-i18n-aria-label="map.zoomIn">+</button>
+      <button type="button" data-map-zoom="out" data-i18n-aria-label="map.zoomOut">−</button>
+      <button type="button" data-map-zoom="fit" data-i18n-aria-label="map.fit">⤢</button>
+    </div>
+    <p class="netmap__hint" data-i18n="map.hint">Drag to move · pinch or scroll to zoom · tap a station</p>
+    <div class="nm-card" id="map-card" hidden></div>
+  </section>
 
   <section class="trip" id="trip" hidden aria-labelledby="trip-title">
     <div class="trip__bar">

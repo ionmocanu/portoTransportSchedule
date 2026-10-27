@@ -10,7 +10,7 @@
  * whole line on a fake GPS at 10× speed, or ?tripsim=Viso>Fórum Maia to
  * ride just that trip — no phone or metro needed.
  */
-import { createTracker, matchDeparture } from './trip-core.js';
+import { createTracker, matchDeparture, ALL } from './trip-core.js';
 import { t } from './i18n.js';
 
 const TICK_MS = 1000;
@@ -123,7 +123,8 @@ function closeTrip() {
 
 function onFix(pos) {
   gpsError = null;
-  tracker.fix({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }, now());
+  const c = pos.coords;
+  tracker.fix({ lat: c.latitude, lon: c.longitude, accuracy: c.accuracy, speed: c.speed }, now());
   render();
 }
 
@@ -383,7 +384,7 @@ function heroHtml(v) {
   const towards = v.terminus && !v.atEnd ? `<span class="trip__towards">${t('trip.towards', { name: esc(v.terminus) })}</span>` : '';
   return `<div class="trip__hero">
     <div class="trip__herotext"><span class="trip__eyebrow">${eyebrow}${approx}</span>
-      <span class="trip__stop">${esc(title)}</span>${towards}</div>${side}</div>`;
+      <span class="trip__stop${title.length > 16 ? ' is-long' : ''}">${esc(title)}</span>${towards}</div>${side}</div>`;
 }
 
 /* ── GPS view ───────────────────────────────────────────────────────
@@ -460,7 +461,7 @@ function renderNav(v) {
   for (const it of items) {
     keep.add(it.id);
     let node = el.navStops.querySelector(`[data-stop="${it.id}"]`);
-    const inner = `<span class="tnav__dot"></span><span class="tnav__name">${esc(name(it.id))}</span><span class="tnav__min">${it.right}</span>`;
+    const inner = `<span class="tnav__dot"></span><span class="tnav__label"><span class="tnav__name">${esc(name(it.id))}</span>${it.right ? `<span class="tnav__min">${it.right}</span>` : ''}</span>`;
     if (!node) {
       node = document.createElement('div');
       node.dataset.stop = it.id;
@@ -495,12 +496,15 @@ function renderNav(v) {
   el.navFork.classList.toggle('is-gone', !forkHtml);
   if (forkHtml) el.navFork.style.transform = `translateY(${forkY}px)`;
 
-  // Bottom bar: which line are you on? Your pick wins; otherwise the one the
-  // timetable matched is marked "auto"; plus how long to the end or split.
+  // Bottom bar: which line are you on? Your pick wins — one line, or "All"
+  // to see every possible line at once; otherwise the one the timetable
+  // matched is marked "auto". Plus how long to the end or split.
   const routesHere = v.routes || [];
   let chooser = '';
   if (routesHere.length > 1 || v.follow) {
-    const btns = routesHere.map((r) => {
+    const all = `<button type="button" class="trip__linebtn is-all" data-act="follow" data-route="${ALL}"
+      aria-pressed="${v.follow === ALL}">${t('trip.all')}</button>`;
+    const btns = all + routesHere.map((r) => {
       const l = lineOf(r);
       const pressed = v.follow === r;
       const auto = v.auto === r;
@@ -508,7 +512,10 @@ function renderNav(v) {
       return `<button type="button" class="trip__linebtn${auto ? ' is-auto' : ''}${unlikely ? ' is-unlikely' : ''}"
         data-act="follow" data-route="${r}" aria-pressed="${pressed}" style="--line:${l?.color}">${esc(l?.short ?? r)}${auto ? `<small>${t('trip.auto')}</small>` : ''}</button>`;
     }).join('');
-    const hint = v.follow ? t('trip.chosen') : v.auto ? t('trip.autoHint') : t('trip.which');
+    const hint = v.follow === ALL ? t('trip.allHint')
+      : v.follow ? t('trip.chosen')
+      : v.auto ? t('trip.autoHint')
+      : t('trip.which');
     chooser = `<div class="tnav__choose"><span class="tnav__ask">${hint}</span><span class="tnav__lines">${btns}</span></div>`;
   }
   let summary = '';
