@@ -8,12 +8,14 @@ export let LINE_COLORS = {};
 export let HOLIDAYS = [];
 export let FEED_VALID_UNTIL = null;
 export let DEFAULT_STOP = null;
+export let APP_VERSION = null;
 
 export async function init() {
   const res = await fetch('/api/config');
   if (!res.ok) throw new Error(`config ${res.status}`);
   const cfg = await res.json();
 
+  APP_VERSION = cfg.app_version || null;
   LINE_COLORS = cfg.line_colors;
   DEFAULT_STOP = cfg.default_stop;
   HOLIDAYS = cfg.holidays || [];

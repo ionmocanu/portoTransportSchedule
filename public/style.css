@@ -1115,3 +1115,10 @@ body[data-loading="true"] .board {
   font-size: 11px;
   color: var(--ink-soft);
 }
+.footer__version {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--data);
+  font-size: 10px;
+  opacity: 0.8;
+}

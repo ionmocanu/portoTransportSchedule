@@ -597,7 +597,7 @@ function updateClock() {
   const locale = getLang() === 'pt' ? 'pt-PT' : 'en-US';
   const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
   const dateString = now.toLocaleDateString(locale, dateOptions);
-  const timeString = now.toLocaleTimeString(locale);
+  const timeString = now.toLocaleTimeString(locale, { hourCycle: 'h23' });
 
   el.clockDisplay.textContent = `${dateString} • ${timeString}`;
 
@@ -690,6 +690,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
   }
 
   renderFeedValidity();
+  const versionEl = document.getElementById('app-version');
+  if (versionEl && feed.APP_VERSION) versionEl.textContent = `v ${feed.APP_VERSION}`;
   initTripPlanner();
   initNearMe();
 

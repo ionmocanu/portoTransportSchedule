@@ -8,6 +8,39 @@ const PORT = process.env.PORT || 8088;
 const ROOT = path.join(__dirname, 'public');
 const UPDATE_EVERY_MS = 24 * 60 * 60 * 1000;
 
+// App version shown in the page footer, so a deploy can be confirmed at a
+// glance: the git commit the server was started from (the Docker build
+// copies .git in with everything else), or APP_VERSION if set. The commit
+// date is only readable while the commit is a loose object, so it's optional.
+function readAppVersion() {
+  if (process.env.APP_VERSION) return process.env.APP_VERSION;
+  try {
+    const gitDir = path.join(__dirname, '.git');
+    let sha = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+    if (sha.startsWith('ref: ')) {
+      const ref = sha.slice(5);
+      try {
+        sha = fs.readFileSync(path.join(gitDir, ref), 'utf8').trim();
+      } catch {
+        const packed = fs.readFileSync(path.join(gitDir, 'packed-refs'), 'utf8');
+        sha = packed.split('\n').find((l) => l.endsWith(` ${ref}`))?.split(' ')[0];
+      }
+    }
+    if (!/^[0-9a-f]{40}$/.test(sha || '')) return 'dev';
+    let date = '';
+    try {
+      const obj = require('node:zlib').inflateSync(fs.readFileSync(path.join(gitDir, 'objects', sha.slice(0, 2), sha.slice(2))));
+      const ts = obj.toString('utf8').match(/^committer .* (\d+) [+-]\d{4}$/m)?.[1];
+      if (ts) date = ` · ${new Date(ts * 1000).toISOString().slice(0, 10)}`;
+    } catch { /* packed object — hash alone is enough */ }
+    return `${sha.slice(0, 7)}${date}`;
+  } catch {
+    return 'dev';
+  }
+}
+const APP_VERSION = readAppVersion();
+console.log(`App version ${APP_VERSION}`);
+
 gtfs.load();
 
 async function checkFeed() {
@@ -35,7 +68,7 @@ function json(res, status, obj) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
-  if (url.pathname === '/api/config')  return json(res, 200, gtfs.getConfig());
+  if (url.pathname === '/api/config')  return json(res, 200, { ...gtfs.getConfig(), app_version: APP_VERSION });
   if (url.pathname === '/api/status')  return json(res, 200, { metro: updater.metro.readState() });
   if (url.pathname === '/api/departures') {
     const payload = gtfs.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
