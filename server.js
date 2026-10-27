@@ -60,6 +60,23 @@ const TYPES = {
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
+// Browsers (and proxies in front of the container) have been seen serving a
+// previous deploy's app.js despite no-cache, mixing old code with new data.
+// index.html is never stored, and every script/stylesheet URL it leads to
+// carries the commit, so each deploy fetches fresh copies. The import map
+// covers the modules app.js pulls in by plain relative path.
+const INDEX_HTML = path.join(ROOT, 'index.html');
+const ASSET_TAG = encodeURIComponent(APP_VERSION.split(' ')[0]);
+const MODULES = ['data.js', 'i18n.js'];
+
+function versionAssets(html) {
+  const importMap = JSON.stringify({ imports: Object.fromEntries(MODULES.map((m) => [`./${m}`, `./${m}?v=${ASSET_TAG}`])) });
+  return html
+    .replace('href="style.css"', `href="style.css?v=${ASSET_TAG}"`)
+    .replace('<script type="module" src="app.js"></script>',
+      `<script type="importmap">${importMap}</script>\n  <script type="module" src="app.js?v=${ASSET_TAG}"></script>`);
+}
+
 function json(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
   res.end(JSON.stringify(obj));
@@ -89,6 +106,11 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(ROOT)) { res.writeHead(403).end('Forbidden'); return; }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found'); return; }
+    if (file === INDEX_HTML) {
+      res.writeHead(200, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store' });
+      res.end(versionAssets(buf.toString('utf8')));
+      return;
+    }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(buf);
   });
