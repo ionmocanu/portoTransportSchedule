@@ -359,14 +359,40 @@ function getDepartures(stopId, directionId, limit = 60) {
 /* Zone-based fare between two stops. Most zone-pairs have a single price;
    a handful (the Póvoa/Vila do Conde branch) price differently depending on
    whether the regular (B) or express (Bexp) line is used — for those we
-   return every matching price so the caller can show all options. */
+   return every matching price so the caller can show all options.
+
+   An Andante title has to cover every zone the trip rides through, not just
+   the destination's: Fórum Maia (MAI1) → Hospital São João (PRT3) is Z2 by
+   the endpoint pair alone, but the metro goes via Trindade (PRT1), and
+   MAI1→PRT1 is Z3. So we price origin → each zone along the planned path
+   and keep the most expensive, per line where rules are line-specific. */
 function getFare(originStopId, destStopId) {
   const originZone = db.stopZones.get(originStopId);
   const destZone = db.stopZones.get(destStopId);
   if (!originZone || !destZone) return { error: 'unknown_stop' };
 
-  const rules = db.fareRules.get(`${originZone}|${destZone}`);
-  if (!rules || !rules.length) return { error: 'no_fare_rule' };
+  const plan = originStopId === destStopId ? null : getTripPlan(originStopId, destStopId);
+  const pathZones = plan?.zones?.length ? plan.zones : [destZone];
+  if (!pathZones.includes(destZone)) pathZones.push(destZone);
+
+  // route_id (or null for line-agnostic rules) → most expensive rule seen
+  const worst = new Map();
+  for (const z of pathZones) {
+    for (const r of db.fareRules.get(`${originZone}|${z}`) || []) {
+      const cur = worst.get(r.route);
+      if (!cur || r.price > cur.price) worst.set(r.route, r);
+    }
+  }
+  if (!worst.size) return { error: 'no_fare_rule' };
+  // A line-specific price can't be lower than what the generic rules
+  // already demand for the zones passed through.
+  const generic = worst.get(null);
+  const specific = [...worst.values()].filter((r) => r.route !== null)
+    .map((r) => (generic && generic.price > r.price ? { ...generic, route: r.route } : r));
+  // Only split by line when the lines actually price differently.
+  const rules = specific.length && new Set(specific.map((r) => r.ticket)).size > 1
+    ? specific
+    : [{ ...(generic && (!specific.length || generic.price >= specific[0].price) ? generic : specific[0]), route: null }];
 
   return {
     origin_stop: originStopId,
