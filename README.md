@@ -38,8 +38,6 @@ porto-metro\
 
 - `GET /api/config` — all stops, directions, line colours
 - `GET /api/departures?stop=<stop_id>&direction=<0|1>` — next 8, up to 2 h out
-- `GET /api/cp/config`, `GET /api/cp/departures?...` — same, for CP trains
-- `GET /api/stcp/config`, `GET /api/stcp/departures?...` — same, for STCP buses
 
 ## Automatic feed updates
 
@@ -57,11 +55,6 @@ The server now keeps the timetable fresh by itself:
 Manual check any time:
 
 ```
-node update-gtfs.js          # metro: check + install if newer
-node update-gtfs.js --cp     # same for CP (Comboios de Portugal)
-node update-gtfs.js --stcp   # same for STCP (Porto city buses)
-node update-gtfs.js --force  # reinstall even if unchanged (combines with --cp/--stcp)
+node update-gtfs.js          # check + install if newer
+node update-gtfs.js --force  # reinstall even if unchanged
 ```
-
-CP publishes a single zip URL updated in place; STCP uploads a new resource
-to the Porto open-data portal every few days (the newest by date is used).

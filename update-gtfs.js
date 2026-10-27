@@ -71,7 +71,7 @@ function validate(files, required) {
   return { valid_until: maxEnd };
 }
 
-// One updater engine, reused per feed (metro, CP) via a small config: where
+// One updater engine, configured per feed via a small config: where
 // to look for a newer zip, which files must be present, and where to
 // install it. Files the new zip doesn't include (e.g. metro's "for apps"
 // export skips fares/amenities) are simply left as whatever is already
@@ -180,58 +180,16 @@ async function findMetroResources() {
 
 const metro = makeUpdater({ label: 'Metro GTFS', dir: METRO_DIR, findResources: findMetroResources, required: METRO_REQUIRED });
 
-// --- CP (Comboios de Portugal) -----------------------------------------
-
-const CP_DIR = process.env.GTFS_CP_DIR || path.join(__dirname, 'gtfs_cp');
-const CP_ZIP_URL = 'https://publico.cp.pt/gtfs/gtfs.zip';
-const CP_REQUIRED = ['agency.txt', 'calendar.txt', 'calendar_dates.txt', 'routes.txt', 'stops.txt', 'stop_times.txt', 'trips.txt'];
-
-// CP publishes one static zip URL and updates it in place (delays, strikes
-// and minimum-service schedules all land as calendar_dates.txt exceptions
-// inside it), so a HEAD request's Last-Modified is enough to detect change
-// without downloading the whole zip every night.
-async function findCpResources() {
-  let modified = '';
-  try {
-    const head = await fetch(CP_ZIP_URL, { method: 'HEAD', headers: BROWSER_HEADERS });
-    modified = head.headers.get('last-modified') || head.headers.get('etag') || '';
-  } catch { /* fall through — checkAndUpdate will do a real GET and surface any error */ }
-  return [{ id: CP_ZIP_URL, url: CP_ZIP_URL, modified, name: 'CP GTFS' }];
-}
-
-const cp = makeUpdater({ label: 'CP GTFS', dir: CP_DIR, findResources: findCpResources, required: CP_REQUIRED });
-
-// --- STCP (Porto city buses) --------------------------------------------
-
-const STCP_DIR = process.env.GTFS_STCP_DIR || path.join(__dirname, 'gtfs_stcp');
-const STCP_CKAN_API = `${CKAN_BASE}horarios-paragens-e-rotas-stcp`;
-// calendar.txt is present but empty in STCP exports — all service dates
-// live in calendar_dates.txt, so that one is genuinely required here.
-const STCP_REQUIRED = ['routes.txt', 'trips.txt', 'stop_times.txt', 'stops.txt', 'calendar.txt', 'calendar_dates.txt'];
-
-// STCP publishes on the same CKAN portal as the metro, but as a new resource
-// every few days ("GTFS STCP 21-07-2026 Mais Recente", …) — the shared CKAN
-// lookup already sorts by last_modified, so the newest upload wins.
-const stcp = makeUpdater({
-  label: 'STCP GTFS',
-  dir: STCP_DIR,
-  findResources: () => findZipResourcesCkan(STCP_CKAN_API),
-  required: STCP_REQUIRED,
-});
-
 module.exports = {
   // back-compat: default export is the metro updater, as before
   checkAndUpdate: metro.checkAndUpdate,
   readState: metro.readState,
   unzip,
   metro,
-  cp,
-  stcp,
 };
 
 if (require.main === module) {
-  const which = process.argv.includes('--stcp') ? stcp : process.argv.includes('--cp') ? cp : metro;
-  which.checkAndUpdate({ force: process.argv.includes('--force') })
+  metro.checkAndUpdate({ force: process.argv.includes('--force') })
     .then((c) => console.log(c ? 'Feed updated.' : 'No change.'))
     .catch((err) => { console.error('Update failed:', err.message); process.exitCode = 1; });
 }

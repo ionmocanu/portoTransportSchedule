@@ -1,10 +1,9 @@
-import * as metroData from './data.js';
-import * as cpData from './data_cp.js';
-import * as stcpData from './data_stcp.js';
+import * as feed from './data.js';
 import { getFare, getTripPlan } from './data.js';
 import { initI18n, setLang, getLang, t, LANGS } from './i18n.js';
 
-const FEEDS = { metro: metroData, cp: cpData, stcp: stcpData };
+// localStorage key the metro picks have always been saved under.
+const SCOPE = 'metro';
 
 const REFETCH_MS = 60_000;
 const TICK_MS = 5_000;
@@ -31,8 +30,6 @@ const el = {
   plannerSwap: document.getElementById('planner-swap'),
   plannerResult: document.getElementById('planner-result'),
   langSwitch: document.getElementById('lang-switch'),
-  tabbar: document.getElementById('tabbar'),
-  plannerSection: document.querySelector('.planner'),
   refresh: document.getElementById('refresh'),
   clockDisplay: document.getElementById('clock-display'),
   holidayWarning: document.getElementById('holiday-warning'),
@@ -40,13 +37,9 @@ const el = {
 };
 
 const state = {
-  mode: 'metro',
   stopId: null, directionId: null, lineFilter: null, payload: null, fetchedAt: null,
   plannerFromTouched: false,
 };
-
-// feed = the data client (STOPS/LINE_COLORS/getDepartures/...) for the active tab.
-let feed = metroData;
 
 const remember = {
   read() {
@@ -85,27 +78,8 @@ function parkingIconHtml(stop) {
   return `<img class="parking-icon" src="${src}" alt="${alt}" title="${alt}">`;
 }
 
-/* Interchange icons — the operators' own logos (same files as the bottom
-   tab bar), shown next to a stop's name when a stop of another operator is
-   within walking distance (computed server-side from the feeds' coordinates). */
-const MODE_LOGOS = {
-  metro: './images/METRO.svg',
-  cp: './images/CP.svg',
-  stcp: './images/STCP.svg',
-};
-
-function connectionIconsHtml(stop) {
-  if (!stop.connections?.length) return '';
-  return stop.connections
-    .map((c) => {
-      const label = t(`conn.${c.type}`, { name: c.name, dist: c.dist_m });
-      return `<img class="conn-icon" src="${MODE_LOGOS[c.type]}" alt="${label}" title="${label}">`;
-    })
-    .join('');
-}
-
 function stopBadgesHtml(stop) {
-  return parkingIconHtml(stop) + connectionIconsHtml(stop);
+  return parkingIconHtml(stop);
 }
 
 function selectStop(stopId, directionId) {
@@ -116,20 +90,20 @@ function selectStop(stopId, directionId) {
     : stop.directions[0].id;
   state.lineFilter = null;
 
-  remember.writeScope(state.mode, { stopId: state.stopId, directionId: state.directionId });
-  remember.pushRecent(state.mode, state.stopId);
+  remember.writeScope(SCOPE, { stopId: state.stopId, directionId: state.directionId });
+  remember.pushRecent(SCOPE, state.stopId);
   el.stopName.innerHTML = `${stop.name}${stopBadgesHtml(stop)}`;
   closeChooser();
   renderDiagram();
   renderLineControls();
   load();
-  if (state.mode === 'metro') syncPlannerFrom(state.stopId);
+  syncPlannerFrom(state.stopId);
 }
 
 function selectDirection(directionId) {
   if (directionId !== state.directionId) state.lineFilter = null;
   state.directionId = directionId;
-  remember.writeScope(state.mode, { directionId });
+  remember.writeScope(SCOPE, { directionId });
   renderDiagram();
   renderLineControls();
   load();
@@ -139,7 +113,7 @@ function selectLine(routeId, directionId) {
   const directionChanged = directionId !== state.directionId;
   state.directionId = directionId;
   state.lineFilter = routeId;
-  remember.writeScope(state.mode, { directionId });
+  remember.writeScope(SCOPE, { directionId });
   renderDiagram();
   renderLineControls();
   if (directionChanged) load();
@@ -280,7 +254,7 @@ function useMyLocation() {
 }
 
 function renderRecents() {
-  const recents = (remember.readScope(state.mode).recents || []).filter(
+  const recents = (remember.readScope(SCOPE).recents || []).filter(
     (id) => feed.STOPS[id] && id !== state.stopId
   );
   el.stopRecents.replaceChildren(
@@ -514,13 +488,13 @@ const DEFAULT_PLANNER_TO = '5726'; // Trindade — the most central stop
 function initTripPlanner() {
   if (!el.plannerFrom || !el.plannerTo) return;
 
-  const stops = Object.values(metroData.STOPS).sort((a, b) => a.name.localeCompare(b.name, 'pt'));
+  const stops = Object.values(feed.STOPS).sort((a, b) => a.name.localeCompare(b.name, 'pt'));
   const options = stops.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   el.plannerFrom.innerHTML = options;
   el.plannerTo.innerHTML = options;
 
-  el.plannerFrom.value = (state.mode === 'metro' && state.stopId) || stops[0]?.id;
-  el.plannerTo.value = metroData.STOPS[DEFAULT_PLANNER_TO] && DEFAULT_PLANNER_TO !== el.plannerFrom.value
+  el.plannerFrom.value = state.stopId || stops[0]?.id;
+  el.plannerTo.value = feed.STOPS[DEFAULT_PLANNER_TO] && DEFAULT_PLANNER_TO !== el.plannerFrom.value
     ? DEFAULT_PLANNER_TO
     : stops.find((s) => s.id !== el.plannerFrom.value)?.id || stops[0]?.id;
 
@@ -680,63 +654,18 @@ function refreshUI() {
   stamp();
   renderFeedValidity();
   renderDisclaimer();
-  if (state.mode === 'metro' && el.plannerFrom.value && el.plannerTo.value) loadTripPlan();
+  if (el.plannerFrom.value && el.plannerTo.value) loadTripPlan();
 }
 
-/* Disclaimer names only the operator whose tab is active, plus the note
-   that interchange icons are purely proximity-based (the 400 m radius in
-   connections.js — keep the i18n strings in sync if that changes). */
+/* Metro do Porto data disclaimer, re-rendered on language switch. */
 function renderDisclaimer() {
   if (!el.disclaimer) return;
-  el.disclaimer.textContent = `${t(`disclaimer.${state.mode}`)} ${t('disclaimer.connections')}`;
-}
-
-/* ── Tabs (METRO / Comboio) ────────────────────────────────────── */
-function renderTabbar() {
-  if (!el.tabbar) return;
-  el.tabbar.querySelectorAll('.tab').forEach((btn) => {
-    btn.setAttribute('aria-selected', String(btn.dataset.mode === state.mode));
-  });
-}
-
-async function switchMode(mode) {
-  if (mode === state.mode || !FEEDS[mode]) return;
-
-  state.mode = mode;
-  feed = FEEDS[mode];
-  state.lineFilter = null;
-  renderTabbar();
-  renderDisclaimer();
-  if (el.plannerSection) el.plannerSection.hidden = mode !== 'metro';
-
-  if (!Object.keys(feed.STOPS).length) {
-    document.body.dataset.loading = 'true';
-    try {
-      await feed.init();
-    } catch (err) {
-      console.error(err);
-      el.board.innerHTML =
-        `<div class="board__empty"><strong>${t('boot.error.title')}</strong>${t('boot.error.body')}</div>`;
-      document.body.dataset.loading = 'false';
-      return;
-    }
-    document.body.dataset.loading = 'false';
-  }
-
-  closeChooser();
-  const saved = remember.readScope(mode);
-  let startId = saved.stopId;
-  if (!startId || !feed.STOPS[startId]) startId = feed.DEFAULT_STOP;
-  selectStop(startId, saved.directionId);
-  renderFeedValidity();
+  el.disclaimer.textContent = t('disclaimer.metro');
 }
 
 /* ── Boot ───────────────────────────────────────────────────────── */
 el.refresh.addEventListener('click', load);
 el.lineFilterClear?.addEventListener('click', clearLineFilter);
-el.tabbar?.querySelectorAll('.tab').forEach((btn) => {
-  btn.addEventListener('click', () => switchMode(btn.dataset.mode));
-});
 
 // Start the clock and update it every 1 second (1000ms)
 updateClock();
@@ -749,11 +678,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
 (async () => {
   await initI18n();
   renderLangSwitch();
-  renderTabbar();
   renderDisclaimer();
 
   try {
-    await metroData.init();
+    await feed.init();
   } catch (err) {
     console.error(err);
     el.board.innerHTML =
@@ -776,10 +704,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) load
     if (e.key === 'Escape') closeChooser();
   });
 
-  const saved = remember.readScope('metro');
+  const saved = remember.readScope(SCOPE);
   const legacy = { viso: '5729', forum_maia: '5760' };
   let startId = saved.stopId;
-  if (startId && !metroData.STOPS[startId]) startId = legacy[startId];
-  if (!startId || !metroData.STOPS[startId]) startId = metroData.DEFAULT_STOP;
+  if (startId && !feed.STOPS[startId]) startId = legacy[startId];
+  if (!startId || !feed.STOPS[startId]) startId = feed.DEFAULT_STOP;
   selectStop(startId, saved.directionId);
 })();

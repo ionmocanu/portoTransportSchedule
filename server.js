@@ -2,9 +2,6 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const gtfs = require('./gtfs');
-const gtfsCp = require('./gtfs_cp');
-const gtfsStcp = require('./gtfs_stcp');
-const connections = require('./connections');
 const updater = require('./update-gtfs');
 
 const PORT = process.env.PORT || 8088;
@@ -12,41 +9,14 @@ const ROOT = path.join(__dirname, 'public');
 const UPDATE_EVERY_MS = 24 * 60 * 60 * 1000;
 
 gtfs.load();
-gtfsCp.load();
-gtfsStcp.load();
-
-function relinkConnections() {
-  const t0 = Date.now();
-  connections.link([
-    { type: 'metro', stops: gtfs.getConfig().stops },
-    { type: 'cp', stops: gtfsCp.getConfig().stops },
-    { type: 'stcp', stops: gtfsStcp.getConfig().stops },
-  ]);
-  console.log(`Interchange connections linked (${Date.now() - t0} ms)`);
-}
-relinkConnections();
 
 async function checkFeed() {
-  let reloaded = false;
   try {
     const changed = await updater.metro.checkAndUpdate();
-    if (changed) { gtfs.load(); reloaded = true; }
+    if (changed) gtfs.load();
   } catch (err) {
     console.error('GTFS update check failed (keeping current feed):', err.message);
   }
-  try {
-    const changed = await updater.cp.checkAndUpdate();
-    if (changed) { gtfsCp.load(); reloaded = true; }
-  } catch (err) {
-    console.error('CP GTFS update check failed (keeping current feed):', err.message);
-  }
-  try {
-    const changed = await updater.stcp.checkAndUpdate();
-    if (changed) { gtfsStcp.load(); reloaded = true; }
-  } catch (err) {
-    console.error('STCP GTFS update check failed (keeping current feed):', err.message);
-  }
-  if (reloaded) relinkConnections();
 }
 checkFeed();
 setInterval(checkFeed, UPDATE_EVERY_MS);
@@ -66,7 +36,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (url.pathname === '/api/config')  return json(res, 200, gtfs.getConfig());
-  if (url.pathname === '/api/status')  return json(res, 200, { metro: updater.metro.readState(), cp: updater.cp.readState(), stcp: updater.stcp.readState() });
+  if (url.pathname === '/api/status')  return json(res, 200, { metro: updater.metro.readState() });
   if (url.pathname === '/api/departures') {
     const payload = gtfs.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
     return json(res, payload.error ? 400 : 200, payload);
@@ -77,16 +47,6 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/api/trip') {
     const payload = gtfs.getTripPlan(url.searchParams.get('from'), url.searchParams.get('to'));
-    return json(res, payload.error ? 400 : 200, payload);
-  }
-  if (url.pathname === '/api/cp/config') return json(res, 200, gtfsCp.getConfig());
-  if (url.pathname === '/api/cp/departures') {
-    const payload = gtfsCp.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
-    return json(res, payload.error ? 400 : 200, payload);
-  }
-  if (url.pathname === '/api/stcp/config') return json(res, 200, gtfsStcp.getConfig());
-  if (url.pathname === '/api/stcp/departures') {
-    const payload = gtfsStcp.getDepartures(url.searchParams.get('stop'), url.searchParams.get('direction'));
     return json(res, payload.error ? 400 : 200, payload);
   }
 

@@ -44,15 +44,6 @@
   "planner.error": "No route found between these stations",
   "parking.free": "Free parking available",
   "parking.paid": "Paid parking available",
-  "conn.metro": "Metro nearby: {{name}} ({{dist}} m)",
-  "conn.cp": "Train nearby: {{name}} ({{dist}} m)",
-  "conn.stcp": "Bus nearby: {{name}} ({{dist}} m)",
   "lang.aria": "Language",
-  "tab.metro": "Metro",
-  "tab.cp": "Train",
-  "tab.stcp": "Bus",
-  "disclaimer.metro": "Schedules shown are the public timetable data published by Metro do Porto, free of charge. This app has no connection to real-time running and cannot account for delays, cancellations, or last-minute changes — always confirm with the operator before traveling.",
-  "disclaimer.cp": "Schedules shown are the public timetable data published by CP (Comboios de Portugal), free of charge. This app has no connection to real-time running and cannot account for delays, cancellations, or last-minute changes — always confirm with the operator before traveling.",
-  "disclaimer.stcp": "Schedules shown are the public timetable data published by STCP, free of charge. This app has no connection to real-time running and cannot account for delays, cancellations, or last-minute changes — always confirm with the operator before traveling.",
-  "disclaimer.connections": "Connections to other public transport, when shown, are based only on proximity (stops within 400 m) — not on guaranteed transfers."
+  "disclaimer.metro": "Schedules shown are the public timetable data published by Metro do Porto, free of charge. This app has no connection to real-time running and cannot account for delays, cancellations, or last-minute changes — always confirm with the operator before traveling."
 }
