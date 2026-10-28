@@ -16,9 +16,14 @@ import { t } from './i18n.js';
 const TICK_MS = 1000;
 const ARROW_PERIOD_S = 1.6;  // keep in sync with the trip-arrows animations
 const NAV_YOU = 0.66;        // you sit two thirds of the way down the view
-const NAV_AHEAD_SECS = 270;  // how much travel time fits above you
+const NAV_AHEAD_SECS = 270;  // travel time above you while the direction is unknown
+const NAV_AHEAD_STOPS = 3;   // auto-zoom so this many next stations fit above you
+const NAV_MIN_SECS = 150;    // …but never zoom in or out past these spans
+const NAV_MAX_SECS = 900;
+const NAV_TOP_PAD = 48;      // room above the furthest station for its name
 const NAV_BEHIND_STOPS = 2;  // passed stations still drawn below you
-const FORK_GAP = 46;         // px between branches where lines split
+const FORK_GAP = 64;         // px between branches where lines split
+const FORK_BEND = 40;        // height of the S-bend where a branch leaves
 
 let ctx = null;      // { stops, getStopId }
 let lines = null;    // /api/lines, fetched on first open
@@ -79,6 +84,7 @@ async function openTrip() {
   gpsError = null;
   showHistory = false;
   matched.clear();
+  navPxs = 0;
   Object.keys(last).forEach((k) => { last[k] = ''; });
   el.navStops.replaceChildren();
   el.navAhead.replaceChildren();
@@ -121,11 +127,13 @@ function closeTrip() {
   tracker = null;
 }
 
+// A fix only updates the tracker. The screen redraws on the steady 1 s tick,
+// so every move glides its full 1 s transition at an even speed — redrawing
+// on each fix too would restart the glides mid-way and make them stutter.
 function onFix(pos) {
   gpsError = null;
   const c = pos.coords;
   tracker.fix({ lat: c.latitude, lon: c.longitude, accuracy: c.accuracy, speed: c.speed }, now());
-  render();
 }
 
 function onGpsError(err) {
@@ -281,8 +289,14 @@ function setHtml(node, key, html) {
 
 const arrowOffset = () => `-${((performance.now() / 1000) % ARROW_PERIOD_S).toFixed(2)}s`;
 
-// Keep one bar per line in a tracks element: lines that drop out shrink and
-// fade instead of vanishing, new ones grow in.
+// Left-to-right lane order in the GPS view, matching the geography where
+// lines split off: A leaves left at Senhora da Hora, E left at Verdes, C
+// right at Fonte do Cuco — so a branch never has to cross another lane.
+const LANE_ORDER = ['A', 'E', 'B', 'Bexp', 'C', 'F', 'D'];
+const laneRank = (r) => (LANE_ORDER.includes(r) ? LANE_ORDER.indexOf(r) : LANE_ORDER.length);
+
+// Keep one bar per line in a tracks element, in LANE_ORDER: lines that drop
+// out shrink and fade instead of vanishing, new ones grow in.
 function syncStripes(box, routes) {
   let wrap = box.firstElementChild;
   if (!wrap) {
@@ -297,16 +311,21 @@ function syncStripes(box, routes) {
       setTimeout(() => i.remove(), 600);
     }
   }
-  routes.forEach((r) => {
-    let i = wrap.querySelector(`i[data-route="${r}"]:not(.is-leaving)`);
-    if (!i) {
-      i = document.createElement('i');
-      i.dataset.route = r;
-      i.style.setProperty('--c', lineOf(r)?.color);
-      i.style.setProperty('--arrow-offset', arrowOffset());
-      wrap.append(i); // grows in via the trip-stripe-in animation
-    }
-  });
+  const sorted = [...routes].sort((a, b) => laneRank(a) - laneRank(b));
+  for (const r of sorted) {
+    if (wrap.querySelector(`i[data-route="${r}"]:not(.is-leaving)`)) continue;
+    const i = document.createElement('i');
+    i.dataset.route = r;
+    i.style.setProperty('--c', lineOf(r)?.color);
+    i.style.setProperty('--arrow-offset', arrowOffset());
+    wrap.append(i); // grows in via trip-stripe-in
+  }
+  // Re-insert only when the order is actually wrong: moving a node restarts
+  // its grow-in animation, so doing it every tick made the stripes flicker.
+  const live = [...wrap.querySelectorAll('i:not(.is-leaving)')];
+  if (live.map((i) => i.dataset.route).join() !== sorted.join()) {
+    for (const r of sorted) wrap.append(live.find((i) => i.dataset.route === r));
+  }
 }
 
 /* ── Rendering ──────────────────────────────────────────────────── */
@@ -393,6 +412,66 @@ function heroHtml(v) {
    between renders and only their positions change, with a 1 s linear
    transition, so the line glides down towards you like a road in a car
    GPS. Where lines split, the track forks into one branch per group. */
+/* Branches past a split, for the GPS view: lines grouped by the track they
+   take — same next station, or an express skipping along the same track
+   (Bx with B). The group's stations are the ones all its stopping lines
+   share, up to where they split again. Busiest branch straight on, others
+   fanning out left, then right. */
+function navBranches(v) {
+  const groups = [];
+  for (const b of v.branches || []) {
+    if (!b.via) continue; // ends at the split: no branch to draw
+    const ids = b.after.map((r) => r.id);
+    const g = groups.find((x) => x.ids.includes(b.via) || ids.includes(x.via));
+    if (!g) { groups.push({ via: b.via, ids, after: b.after, routes: [b.route], members: [b] }); continue; }
+    g.routes.push(b.route);
+    g.members.push(b);
+    if (b.via !== g.via && ids.includes(g.via)) Object.assign(g, { via: b.via, ids, after: b.after }); // b stops sooner
+  }
+  if (!groups.length) return [];
+  // The busiest branch goes straight on; the others fan out to the side
+  // their lanes are on (see LANE_ORDER), nearest first.
+  const rank = (g) => g.routes.reduce((s, r) => s + laneRank(r), 0) / g.routes.length;
+  const main = groups.reduce((a, b) => (b.routes.length > a.routes.length ? b : a));
+  const lefts = groups.filter((g) => g !== main && rank(g) < rank(main)).sort((a, b) => rank(b) - rank(a));
+  const rights = groups.filter((g) => g !== main && rank(g) >= rank(main)).sort((a, b) => rank(a) - rank(b));
+  const placed = [
+    { g: main, dx: 0 },
+    ...lefts.slice(0, 2).map((g, i) => ({ g, dx: -FORK_GAP * (i + 1) })),
+    ...rights.slice(0, 2).map((g, i) => ({ g, dx: FORK_GAP * (i + 1) })),
+  ];
+  return placed.map(({ g, dx }) => {
+    const stopping = g.members.filter((m) => m.via === g.via);
+    const stops = [];
+    for (const s of g.after) {
+      if (stops.length >= NAV_AHEAD_STOPS || !stopping.every((m) => m.after.some((r) => r.id === s.id))) break;
+      stops.push(s);
+    }
+    return { routes: g.routes, stops, dx };
+  });
+}
+
+/* Auto-zoom, like a car GPS: pixels per second of travel chosen so the next
+   NAV_AHEAD_STOPS stations fit above you — along every branch when a split
+   is coming, so each option shows its own next stations. The span is
+   counted from the last station passed, so it holds steady along a hop and
+   only changes at a station — and then the zoom eases over instead of
+   jumping. */
+let navPxs = 0;
+function navScale(v, youY, branches) {
+  let span = NAV_AHEAD_SECS;
+  const routes = branches.length ? branches.map((b) => [...v.ahead, ...b.stops]) : [v.ahead];
+  const furthest = Math.max(0, ...routes.map((r) => r[Math.min(NAV_AHEAD_STOPS, r.length) - 1]?.secs ?? 0));
+  if (v.directionKnown && furthest) {
+    const idx = v.line.stops.indexOf(v.stop);
+    const elapsed = v.phase === 'between' && idx >= 0 ? (v.progress ?? 0) * v.line.hop_secs[idx] : 0;
+    span = elapsed + furthest;
+  }
+  const target = (youY - NAV_TOP_PAD) / Math.min(NAV_MAX_SECS, Math.max(NAV_MIN_SECS, span));
+  navPxs = navPxs ? navPxs + (target - navPxs) * 0.3 : target;
+  return navPxs;
+}
+
 function renderNav(v) {
   el.nav.hidden = false;
   el.nav.classList.toggle('is-approx', !!v.approx);
@@ -400,8 +479,14 @@ function renderNav(v) {
   const H = el.nav.clientHeight;
   const W = el.nav.clientWidth;
   const youY = Math.round(H * NAV_YOU);
-  const pxs = youY / NAV_AHEAD_SECS;
-  const x = Math.round(W * 0.3);
+  const branches = v.directionKnown ? navBranches(v) : [];
+  const pxs = navScale(v, youY, branches);
+  // With a fork coming, the track moves to the middle (it glides there —
+  // lanes and dots transition) so every branch has room for its names.
+  const x = Math.round(W * (branches.length ? 0.5 : 0.3));
+  // Names go on the outside of each branch; the straight-on branch takes
+  // the side no other branch fans out to.
+  const mainLeft = branches.some((b) => b.dx > 0) && !branches.some((b) => b.dx < 0);
   el.nav.style.setProperty('--x', `${x}px`);
   el.nav.style.setProperty('--you', `${youY}px`);
 
@@ -445,16 +530,38 @@ function renderNav(v) {
     });
     const lastY = items.find((it) => it.id === (v.splitAt ?? v.ahead.at(-1)?.id))?.y;
     if (v.branches.length) forkY = lastY ?? youY;
+    // Each branch's own next stations, on its own bundle; the first one
+    // carries the branch's line letters.
+    if (forkY != null) {
+      for (const b of branches) {
+        b.stops.forEach((s, i) => items.push({
+          id: s.id,
+          y: youY - s.secs * pxs,
+          sx: x + b.dx,
+          sw: b.routes.length * 8,
+          left: b.dx < 0 || (b.dx === 0 && mainLeft),
+          cls: 'is-branch',
+          right: minLabel(s.secs) + (i === 0 ? ` ${b.routes.map((r) => `<i class="tnav__tag" style="--line:${lineOf(r)?.color}">${esc(lineOf(r)?.short ?? r)}</i>`).join('')}` : ''),
+        }));
+      }
+    }
     if (v.atEnd) aheadTop = youY;
     else if (forkY != null) aheadTop = forkY;
     else if (v.ahead.at(-1)?.id === seq.at(-1)) aheadTop = lastY; // line ends on screen
   }
 
-  // Tracks: coloured ahead of you, greyed behind.
-  el.navAhead.style.transform = `translateY(${Math.min(aheadTop, youY)}px)`;
-  el.navAhead.style.height = `${Math.max(0, youY - Math.min(aheadTop, youY))}px`;
-  el.navBehind.style.transform = `translateY(${youY}px)`;
-  el.navBehind.style.height = `${Math.max(0, behindEnd - youY)}px`;
+  // Tracks: coloured ahead of you, greyed behind. The coloured one is a long
+  // strip that only moves (its top end glides with the stations) and is cut
+  // off at you by its clip box — animating its height instead stalls and
+  // costs a re-layout on every frame.
+  el.navAhead.style.transform = `translateY(${Math.min(aheadTop, youY).toFixed(1)}px)`;
+  el.navBehind.style.height = `${Math.max(0, behindEnd - youY).toFixed(1)}px`;
+
+  // A passed station's name gives way when it would sit on top of another.
+  for (const it of items) {
+    if (it.cls !== 'is-passed') continue;
+    it.quiet = items.some((o) => o !== it && o.cls !== 'is-passed' && (o.sx ?? x) === x && Math.abs(o.y - it.y) < 44);
+  }
 
   // Stations: keyed by stop id so each one glides instead of being redrawn.
   const keep = new Set();
@@ -468,33 +575,46 @@ function renderNav(v) {
       node.style.transform = `translateY(${it.y}px)`;
       el.navStops.append(node);
     }
-    node.className = `tnav__stop ${it.cls}`;
+    node.className = `tnav__stop ${it.cls}${it.left ? ' is-left' : ''}${it.quiet ? ' is-quiet' : ''}`;
     if (node.dataset.html !== inner) { node.innerHTML = inner; node.dataset.html = inner; }
-    node.style.transform = `translateY(${it.y}px)`;
+    node.style.transform = `translateY(${it.y.toFixed(1)}px)`;
+    // Stations on a branch sit on that branch's bundle, not the main track.
+    if (it.sx != null) {
+      node.style.setProperty('--sx', `${it.sx}px`);
+      node.style.setProperty('--sw', `${it.sw}px`);
+    } else {
+      node.style.removeProperty('--sx');
+      node.style.removeProperty('--sw');
+    }
   }
   for (const node of [...el.navStops.children]) if (!keep.has(node.dataset.stop)) node.remove();
 
-  // Fork: one branch per group, fanning out and running off the top, with
-  // the group's line badges at the end (tap one to follow it).
-  const groups = branchGroups(v).filter((g) => g.via);
+  // Fork: past the split, one branch per group of lines heading the same
+  // way — the busiest straight on, the others fanning out — each a bundle
+  // of its own lanes with its next stations on it.
   let forkHtml = '';
-  if (forkY != null && groups.length) {
-    const top = 700;
-    const paths = groups.map((g, i) => {
-      const dx = (i - (groups.length - 1) / 2) * FORK_GAP;
-      const color = lineOf(g.routes[0])?.color;
-      return `<path d="M${x} ${top} L${x} ${top - 16} C${x} ${top - 50} ${x + dx} ${top - 46} ${x + dx} ${top - 84} L${x + dx} 0" stroke="${color}" />`;
-    }).join('');
-    const tags = groups.map((g, i) => {
-      const dx = (i - (groups.length - 1) / 2) * FORK_GAP;
-      return `<span class="tnav__branch" style="left:${x + dx}px">${g.routes.map((r) => lineButton(r, v.follow, true)).join('')}</span>`;
-    }).join('');
-    forkHtml = `<svg class="tnav__forksvg" width="${W}" height="${top}" viewBox="0 0 ${W} ${top}">${paths}</svg>${tags}`;
+  if (forkY != null && branches.length) {
+    const order = [...el.navAhead.querySelectorAll('i[data-route]:not(.is-leaving)')].map((i) => i.dataset.route);
+    const n = Math.max(1, order.length);
+    const lane = (k, count, cx) => cx - (count - 1) * 4 + k * 8; // stripe centres, 8 apart
+    const top = 1500;
+    const paths = [];
+    for (const b of branches) {
+      const cx = x + b.dx;
+      const mine = order.filter((r) => b.routes.includes(r));
+      mine.forEach((r, k) => {
+        const from = lane(order.indexOf(r), n, x);
+        const to = lane(k, mine.length, cx);
+        const d = `M${from} ${top} C${from} ${top - FORK_BEND / 2} ${to} ${top - FORK_BEND / 2} ${to} ${top - FORK_BEND} L${to} 0`;
+        paths.push(`<path d="${d}" stroke="${lineOf(r)?.color}" /><path class="tnav__forkarrows" d="${d}" />`);
+      });
+    }
+    forkHtml = `<svg class="tnav__forksvg" width="${W}" height="${top}" viewBox="0 0 ${W} ${top}">${paths.join('')}</svg>`;
   }
   // The fork fades out (rather than vanishing) once the lines are settled.
   if (forkHtml && last.fork !== forkHtml) { last.fork = forkHtml; el.navFork.innerHTML = forkHtml; }
   el.navFork.classList.toggle('is-gone', !forkHtml);
-  if (forkHtml) el.navFork.style.transform = `translateY(${forkY}px)`;
+  if (forkHtml) el.navFork.style.transform = `translateY(${forkY.toFixed(1)}px)`;
 
   // Bottom bar: which line are you on? Your pick wins — one line, or "All"
   // to see every possible line at once; otherwise the one the timetable

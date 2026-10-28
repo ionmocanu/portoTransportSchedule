@@ -1680,12 +1680,32 @@ body.is-tripping {
 .tnav[hidden] {
   display: none;
 }
+/* Each track sits in a clip box that ends at you: the coloured strip ahead
+   is long and only moved (cheap, smooth), the box cuts it off at --you. */
+.tnav__clip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.tnav__clip--ahead {
+  top: 0;
+  height: var(--you);
+}
+.tnav__clip--behind {
+  top: var(--you);
+  bottom: 0;
+}
 .tnav__track {
   position: absolute;
   top: 0;
   left: calc(var(--x) - var(--track-w) / 2);
-  height: 0;
-  transition: transform 1s linear, height 1s linear, left 0.5s ease;
+  transition: left 0.5s ease;
+}
+.tnav__track--ahead {
+  height: 4000px;
+  transition: transform 1s linear, left 0.5s ease;
 }
 .tnav__track .trip-tracks {
   height: 100%;
@@ -1712,10 +1732,13 @@ body.is-tripping {
   height: 0;
   transition: transform 1s linear;
 }
+/* --sx / --sw: a station on a branch past a split sits on that branch's
+   own bundle instead of the main track. */
 .tnav__dot {
   position: absolute;
   top: 0;
-  left: var(--x);
+  left: var(--sx, var(--x));
+  transition: left 0.5s ease;
   width: 16px;
   height: 16px;
   border: 3px solid var(--ink);
@@ -1728,12 +1751,34 @@ body.is-tripping {
 .tnav__label {
   position: absolute;
   top: 0;
-  left: calc(var(--x) + var(--track-w) / 2 + 14px);
+  left: calc(var(--sx, var(--x)) + var(--sw, var(--track-w)) / 2 + 14px);
   right: 12px;
   display: flex;
   flex-direction: column;
   transform: translateY(-50%);
+  transition: left 0.5s ease, opacity 0.3s ease;
   text-shadow: 0 0 3px var(--glaze), 0 0 3px var(--glaze);
+}
+/* A branch fanning out to the left gets its names on the left. */
+.tnav__stop.is-left .tnav__label {
+  left: 8px;
+  right: calc(100% - var(--sx) + var(--sw) / 2 + 14px);
+  align-items: flex-end;
+  text-align: right;
+}
+.tnav__tag {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--line);
+  color: #fff;
+  font-family: var(--display);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.5;
+  text-shadow: none;
 }
 .tnav__name {
   font-family: var(--display);
@@ -1769,8 +1814,9 @@ body.is-tripping {
 }
 .tnav__stop.is-next .tnav__name,
 .tnav__stop.is-current .tnav__name {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
+  overflow-wrap: break-word;
 }
 .tnav__stop.is-next .tnav__min {
   color: var(--trip-accent);
@@ -1832,16 +1878,17 @@ body.is-tripping {
 .tnav__forksvg path {
   fill: none;
   stroke-width: 6;
-  stroke-linecap: round;
-  opacity: 0.85;
 }
-.tnav__branch {
-  position: absolute;
-  top: -96px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  transform: translate(-50%, -100%);
+/* Arrows running up the branches, matching the stripes' chevron pace. */
+.tnav__forksvg path.tnav__forkarrows {
+  stroke: #fff;
+  stroke-width: 1.4;
+  stroke-dasharray: 3 9;
+  opacity: 0.55;
+  animation: trip-fork-dash 1.6s linear infinite;
+}
+@keyframes trip-fork-dash {
+  to { stroke-dashoffset: -12; }
 }
 
 /* Bottom bar: possible lines and time to the end. */
@@ -1914,6 +1961,7 @@ body.is-tripping {
 
 @media (prefers-reduced-motion: reduce) {
   .trip-tracks i::after,
+  .tnav__forksvg path.tnav__forkarrows,
   .tnav__pulse,
   .troute__row.is-you .troute__dot::after {
     animation: none;
@@ -2125,4 +2173,7 @@ body.is-mapping {
   fill: none;
   stroke: var(--trip-accent);
   stroke-width: 3;
+}
+.tnav__stop.is-quiet .tnav__label {
+  opacity: 0;
 }

@@ -67,6 +67,34 @@ export function createTracker(stops, lines) {
   const at = (id) => stops[id];
   const linesThrough = (id) => lines.filter((l) => l.stops.includes(id));
 
+  // The track between two neighbouring stops of a line, as the stations it
+  // actually runs past. An express hop (Bx: Senhora da Hora → Pedras Rubras)
+  // is one straight chord of several km, and a fix a few hundred metres off
+  // to the side still sits almost "on the way" along it — so it's followed
+  // through the line that stops everywhere there (B: Fonte do Cuco,
+  // Custóias…), the one with the most stops in between.
+  const paths = new Map();
+  function trackPath(a, b) {
+    const k = `${a}|${b}`;
+    if (paths.has(k)) return paths.get(k);
+    let best = [a, b];
+    for (const l of lines) {
+      const i = l.stops.indexOf(a);
+      const j = l.stops.indexOf(b);
+      if (i < 0 || j < 0 || Math.abs(i - j) + 1 <= best.length) continue;
+      best = i < j ? l.stops.slice(i, j + 1) : l.stops.slice(j, i + 1).reverse();
+    }
+    paths.set(k, best);
+    return best;
+  }
+  // How far out of the way p is on the hop a → b, along its real track.
+  function hopFit(a, p, b) {
+    const path = trackPath(a, b);
+    let fit = Infinity;
+    for (let i = 1; i < path.length; i++) fit = Math.min(fit, detour(at(path[i - 1]), p, at(path[i])));
+    return fit;
+  }
+
   const s = {
     phase: 'locating', // locating | at | between
     stop: null,        // station we're at, or the last one passed
@@ -158,7 +186,7 @@ export function createTracker(stops, lines) {
         else if (s.approx && j >= 0 && c.idx - j <= MAX_SKIP && j <= c.idx) cands.push({ line: c.line, idx: j });
         // An express passing through a station it doesn't serve.
         else if (j < 0 && c.idx + 1 < seq.length
-          && detour(at(seq[c.idx]), at(id), at(seq[c.idx + 1])) < ON_SEGMENT_M) cands.push(c);
+          && hopFit(seq[c.idx], at(id), seq[c.idx + 1]) < ON_SEGMENT_M) cands.push(c);
       }
       if (!cands.some((c) => c.line.stops[c.idx] === id)) cands = null;
     }
@@ -205,7 +233,7 @@ export function createTracker(stops, lines) {
     for (const line of linesThrough(s.stop)) {
       const i = line.stops.indexOf(s.stop);
       if (i + 1 >= line.stops.length) continue;
-      fits.push({ line, idx: i, fit: detour(at(s.stop), p, at(line.stops[i + 1])) });
+      fits.push({ line, idx: i, fit: hopFit(s.stop, p, line.stops[i + 1]) });
     }
     if (!fits.length) return;
     const best = Math.min(...fits.map((f) => f.fit));
@@ -219,9 +247,8 @@ export function createTracker(stops, lines) {
     let best = null;
     for (const line of lines) {
       for (let i = 0; i + 1 < line.stops.length; i++) {
-        const a = at(line.stops[i]);
         const b = at(line.stops[i + 1]);
-        const fit = detour(a, p, b);
+        const fit = hopFit(line.stops[i], p, line.stops[i + 1]);
         const closer = distM(s.firstFix, b) - distM(p, b);
         if (closer < MOVE_M / 2) continue;
         if (!best || fit < best.fit - 1) best = { fit, hops: [{ line, idx: i }] };
@@ -246,10 +273,21 @@ export function createTracker(stops, lines) {
       let bestK = c.idx;
       let bestFit = Infinity;
       for (let k = c.idx; k + 1 < seq.length && k - c.idx < MAX_SKIP; k++) {
-        const fit = detour(at(seq[k]), p, at(seq[k + 1]));
+        const fit = hopFit(seq[k], p, seq[k + 1]);
         if (fit < bestFit - 20) { bestFit = fit; bestK = k; }
       }
       c.idx = bestK;
+      c.fit = bestFit;
+    }
+    // Well clear of the station we left, lines whose track we're plainly not
+    // on (the other side of a split, or one that ended there) drop out now,
+    // not only on arriving at the next station.
+    if (s.phase === 'between' && distM(at(s.stop), p) > AT_LEAVE_M) {
+      const on = s.cands.filter((c) => c.fit <= ON_SEGMENT_M);
+      if (on.length && on.length < s.cands.length) {
+        s.cands = s.cands.filter((c) => c.fit <= ON_SEGMENT_M + 60);
+        dropImpossible();
+      }
     }
     const pc = primary();
     if (!pc || pc.idx + 1 >= pc.line.stops.length) return;
@@ -471,6 +509,8 @@ export function createTracker(stops, lines) {
           color: l.c.line.color,
           terminus: l.c.line.terminus,
           via: l.rest[from + 1]?.id ?? null,
+          // This line's stops after the split, with seconds until each.
+          after: l.rest.slice(from + 1),
         };
       });
 
